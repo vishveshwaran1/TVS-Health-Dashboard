@@ -10,11 +10,13 @@ import { useToast } from "@/hooks/use-toast";
 interface EmployeeEntryProps {
   onBack: () => void;
   onAddEmployee: (employee: {
-    name: string;
-    height: string;
-    weight: string;
-    bloodGroup: string;
-    contactNumber: string;
+     name: string;
+  age: string;
+  gender: string;
+  height: string;
+  weight: string;
+  bloodGroup: string;
+  contactNumber: string;
   }) => void;
 }
 
@@ -53,6 +55,8 @@ const EmployeeEntry = ({ onBack, onAddEmployee }: EmployeeEntryProps) => {
     // Add new employee with all required fields
     onAddEmployee({
       name: `${formData.firstName} ${formData.lastName}`,
+      age: formData.age,
+      gender: formData.gender,
       height: formData.height || 'Not specified', // Add height field to form
       weight: formData.weight || 'Not specified', // Add weight field to form
       bloodGroup: formData.bloodGroup,

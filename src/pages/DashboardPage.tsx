@@ -32,13 +32,14 @@ interface Device {
   status: 'normal' | 'warning' | 'critical';
   heartRate: number;
   temperature: number;
-  height: string;
-  weight: string;
+  respiratoryRate: number;
+  bloodPressure: number;
   bloodGroup: string;
   contactNumber: string;
-  respiratoryRate: number;
   photo: string;
   connected: boolean;
+  height: string;
+  weight: string;
   heartRateHistory: Array<{
     time: string;
     value: number;
@@ -52,6 +53,7 @@ interface Device {
     value: number;
   }>;
   previousWork: WorkEntry[];
+  updated_at_raw: string;
 }
 interface DashboardPageProps {
   onLogout: () => void;
@@ -76,21 +78,22 @@ const DashboardPage = ({
     const mapRowToDevice = (row: any): Device => ({
       id: row.id,
       deviceName: row.mac_address || "Unknown Device",
-      assignedPerson: "Unknown", // Update if you have a name field
-      age: 0, // Default or fetch from another table if available
+      assignedPerson: "Unknown",
+      age: 0,
       gender: "Unknown",
       location: "Unknown",
       mac: row.mac_address || "",
-      status: "normal", // You can set logic based on vitals if needed
+      status: determineDeviceStatus(row.heart_rate ?? 0, row.temperature ?? 0, row.respiratory_rate ?? 0),
       heartRate: row.heart_rate ?? 0,
       temperature: row.temperature ?? 0,
       respiratoryRate: row.respiratory_rate ?? 0,
-      height: "",
-      weight: "",
+      bloodPressure: row.blood_pressure ?? 120,
       bloodGroup: "",
       contactNumber: "",
       photo: "/api/placeholder/150/150",
-      connected: true, // Or set logic based on your needs
+      connected: true,
+      height: row.height ?? "0",
+      weight: row.weight ?? "0",
       heartRateHistory: Array(MAX_HISTORY_POINTS).fill(null).map((_, i) => ({
         time: new Date(Date.now() - (MAX_HISTORY_POINTS - 1 - i) * 1000).toLocaleTimeString(),
         value: row.heart_rate ?? 0
@@ -104,6 +107,7 @@ const DashboardPage = ({
         value: row.respiratory_rate ?? 0
       })),
       previousWork: [],
+      updated_at_raw: row.updated_at,
     });
 
     interface LiveData {
@@ -118,10 +122,29 @@ const DEVICE_ID = "hr-01";
 
 
     const fetchDevices = async () => {
-      const { data, error } = await supabase.from("Health Status").select("*");
+      const { data, error } = await supabase
+        .from("Health Status")
+        .select("*")
+        .order("updated_at", { ascending: false });
+
       console.log("Supabase data:", data, "Error:", error);
+      
       if (!error && data) {
-        setDevices(data.map(mapRowToDevice));
+        const uniqueDevicesMap = new Map<string, Device>();
+
+        data.forEach(row => {
+          const mac = row.mac_address;
+          if (mac) {
+            if (!uniqueDevicesMap.has(mac) || 
+                new Date(row.updated_at) > new Date(uniqueDevicesMap.get(mac)!.updated_at_raw)) {
+              uniqueDevicesMap.set(mac, mapRowToDevice(row));
+            }
+          }
+        });
+
+        const uniqueDevices = Array.from(uniqueDevicesMap.values());
+        console.log("Unique devices:", uniqueDevices);
+        setDevices(uniqueDevices);
       }
     };
 
@@ -318,75 +341,85 @@ console.log('New heart rate history:', newHeartRateHistory);
     }
   }, [selectedDevice?.heartRateHistory, selectedDevice?.temperatureHistory, selectedDevice?.respiratoryRateHistory]);
 
+  // Helper function to update history arrays
+  const updateHistory = (history: Array<{ time: string; value: number }>, newValue: number) => {
+    const timeString = new Date().toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const newHistory = [...history.slice(1), { time: timeString, value: newValue }];
+    return newHistory;
+  };
+
   // Replace the existing useEffect for real-time updates with this:
   useEffect(() => {
     if (!selectedDevice?.connected) return;
 
-    let lastUpdateTime = Date.now();
-    const MIN_UPDATE_INTERVAL = 100; // Reduced to 100ms for smoother updates
-
     const handleRealtimeUpdate = (payload: any) => {
-      const currentTime = Date.now();
-      if (currentTime - lastUpdateTime < MIN_UPDATE_INTERVAL) return;
-      lastUpdateTime = currentTime;
-
       const newData = payload.new;
-      const timeString = new Date().toLocaleTimeString('en-US', {
+      // Use precise timestamp for accurate timing
+      const now = new Date();
+      const timeString = now.toLocaleTimeString('en-US', {
         hour12: false,
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit'
-      });
+      }) + '.' + String(now.getMilliseconds()).padStart(3, '0');
 
-      // Enhanced data validation and parsing
+      // Parse values without rounding
       const parseValue = (value: any, fallback: number) => {
         const parsed = Number(value);
-        return !isNaN(parsed) ? Number(parsed.toFixed(1)) : fallback;
+        return !isNaN(parsed) ? parsed : fallback;
       };
 
       setSelectedDevice(prev => {
         if (!prev) return null;
 
+        // Get exact values from Supabase
         const newHeartRate = parseValue(newData.heart_rate, prev.heartRate);
         const newTemperature = parseValue(newData.temperature, prev.temperature);
         const newRespiratoryRate = parseValue(newData.respiratory_rate, prev.respiratoryRate);
+        const newBloodPressure = parseValue(newData.blood_pressure, prev.bloodPressure);
 
-        // Enhanced history update with interpolation
+        // Update history with exact values
         const updateHistory = (history: Array<{time: string; value: number}>, newValue: number) => {
           const newHistory = [...history];
           if (newHistory.length >= MAX_HISTORY_POINTS) {
             newHistory.shift();
           }
-
-          // Add slight random variation for more natural visualization
-          const variation = (Math.random() - 0.5) * 0.2;
-          const smoothedValue = Number((newValue + variation).toFixed(1));
-
           newHistory.push({
             time: timeString,
-            value: smoothedValue
+            value: newValue // Store exact value without rounding
           });
-
           return newHistory;
         };
 
-        // Update status based on new values
-        const newStatus = determineDeviceStatus(newHeartRate, newTemperature, newRespiratoryRate);
+        // Log exact values for debugging
+        console.log('Raw update values:', {
+          heartRate: newData.heart_rate,
+          temperature: newData.temperature,
+          respiratoryRate: newData.respiratory_rate,
+          timestamp: timeString
+        });
 
         return {
           ...prev,
           heartRate: newHeartRate,
           temperature: newTemperature,
           respiratoryRate: newRespiratoryRate,
+          bloodPressure: newBloodPressure,
           heartRateHistory: updateHistory(prev.heartRateHistory, newHeartRate),
           temperatureHistory: updateHistory(prev.temperatureHistory, newTemperature),
           respiratoryRateHistory: updateHistory(prev.respiratoryRateHistory, newRespiratoryRate),
-          status: newStatus
+          status: determineDeviceStatus(newHeartRate, newTemperature, newRespiratoryRate),
+          updated_at_raw: newData.updated_at
         };
       });
     };
 
-    // Enhanced Supabase subscription
+    // Set up Supabase subscription without debouncing
     const channel = supabase
       .channel(`device-updates-${selectedDevice.mac}-${Date.now()}`)
       .on(
@@ -407,7 +440,6 @@ console.log('New heart rate history:', newHeartRateHistory);
       )
       .subscribe();
 
-    // Cleanup
     return () => {
       supabase.removeChannel(channel);
     };
@@ -459,9 +491,22 @@ console.log('New heart rate history:', newHeartRateHistory);
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
               <EmployeeEntry 
                 onBack={() => setIsEmployeeEntryOpen(false)}
-                onAddEmployee={(employee) => {
-                  console.log('Employee added:', employee);
+                onAddEmployee={(employeeData) => {
+                  console.log('Employee added:', employeeData);
                   setIsEmployeeEntryOpen(false);
+
+                  setSelectedDevice(prevDevice => {
+                    if (!prevDevice) return null;
+
+                    return {
+                      ...prevDevice,
+                      assignedPerson: employeeData.name,
+                      age: parseInt(employeeData.age),
+                      gender: employeeData.gender,
+                      bloodGroup: employeeData.bloodGroup,
+                      contactNumber: employeeData.contactNumber,
+                    };
+                  });
                 }}
               />
             </DialogContent>
@@ -576,66 +621,48 @@ console.log('New heart rate history:', newHeartRateHistory);
             <CardHeader className="pb-2 px-3 pt-3">
               <CardTitle className="text-gray-900 text-[16px] font-semibold">Employee Details</CardTitle>
             </CardHeader>
-                          <CardContent className="p-3 pt-0">
-                <div className="space-y-2 animate-fade-in">
-                  {/* Employee Selection Dropdown */}
-                  <div className="mb-2">
-                  <Select value={selectedDevice?.id || ""} onValueChange={handleDeviceSelect}>
-                    <SelectTrigger className="w-full bg-white border-2 border-gray-200 hover:border-blue-300 transition-colors duration-300 rounded-lg text-[8px] h-6">
-                      <SelectValue placeholder="Select employee" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-white border border-gray-200 shadow-xl z-50 rounded-xl">
-                      {devices.map(device => (
-                        <SelectItem key={device.id} value={device.id} className="cursor-pointer hover:bg-blue-50 transition-colors duration-200">
-                          <div className="flex items-center space-x-2">
-                            <User className="w-3 h-3 text-blue-600" />
-                            <span className="text-[11px] font-medium text-gray-900">{device.assignedPerson}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                                  {/* Employee Information - Only show if employee is selected */}
-                  {selectedDevice && (
-                    <div className="space-y-1">
-                      <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-blue-50 rounded-md border border-gray-100 hover:border-blue-200 transition-all duration-300">
-                        <User className="w-3 h-3 text-blue-600 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Name</p>
-                          <p className="text-[12px] font-semibold text-gray-900 truncate">{selectedDevice.assignedPerson}</p>
+            <CardContent className="p-3 pt-0">
+              <div className="space-y-2 animate-fade-in">
+                {selectedDevice && (
+                  <div className="space-y-1">
+                    <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-blue-50 rounded-md border border-gray-100 hover:border-blue-200 transition-all duration-300">
+                      <User className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Name</p>
+                        <p className="text-[12px] font-semibold text-gray-900 truncate">{selectedDevice.assignedPerson}</p>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                        <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-green-50 rounded-md border border-gray-100 hover:border-green-200 transition-all duration-300">
-                          <Ruler className="w-3 h-3 text-green-600 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Height</p>
-                            <p className="text-xs font-semibold text-gray-900">{selectedDevice.height}</p>
+                      <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-green-50 rounded-md border border-gray-100 hover:border-green-200 transition-all duration-300">
+                        <User className="w-3 h-3 text-green-600 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Age</p>
+                          <p className="text-xs font-semibold text-gray-900">{selectedDevice.age}</p>
                         </div>
                       </div>
-                         <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-purple-50 rounded-md border border-gray-100 hover:border-purple-200 transition-all duration-300">
-                          <Weight className="w-3 h-3 text-purple-600 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Weight</p>
-                            <p className="text-xs font-semibold text-gray-900">{selectedDevice.weight}</p>
+                      <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-purple-50 rounded-md border border-gray-100 hover:border-purple-200 transition-all duration-300">
+                        <User className="w-3 h-3 text-purple-600 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Gender</p>
+                          <p className="text-xs font-semibold text-gray-900">{selectedDevice.gender}</p>
                         </div>
                       </div>
                     </div>
-                      <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-red-50 rounded-md border border-gray-100 hover:border-red-200 transition-all duration-300">
-                        <Droplets className="w-3 h-3 text-red-600 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Blood Group</p>
-                          <p className="text-xs font-semibold text-gray-900">{selectedDevice.bloodGroup}</p>
+
+                    <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-red-50 rounded-md border border-gray-100 hover:border-red-200 transition-all duration-300">
+                      <Droplets className="w-3 h-3 text-red-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Blood Group</p>
+                        <p className="text-xs font-semibold text-gray-900">{selectedDevice.bloodGroup}</p>
                       </div>
                     </div>
-                      <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-orange-50 rounded-md border border-gray-100 hover:border-orange-200 transition-all duration-300">
-                        <Phone className="w-3 h-3 text-orange-600 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Contact</p>
-                          <p className="text-xs font-semibold text-gray-900">{selectedDevice.contactNumber}</p>
+
+                    <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-orange-50 rounded-md border border-gray-100 hover:border-orange-200 transition-all duration-300">
+                      <Phone className="w-3 h-3 text-orange-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Contact</p>
+                        <p className="text-xs font-semibold text-gray-900">{selectedDevice.contactNumber}</p>
                       </div>
                     </div>
                   </div>
@@ -677,20 +704,20 @@ console.log('New heart rate history:', newHeartRateHistory);
                         subtitle="Real-time monitoring" 
                         heartRateData={selectedDevice.heartRateHistory.map(h => ({
                           time: h.time,
-                          value: Number(h.value)
+                          value: Number(h.value) // Keep exact value
                         }))} 
                         temperatureData={selectedDevice.temperatureHistory.map(h => ({
                           time: h.time,
-                          value: Number(h.value)
+                          value: Number(h.value) // Keep exact value
                         }))} 
                         respiratoryRateData={selectedDevice.respiratoryRateHistory.map(h => ({
                           time: h.time,
-                          value: Number(h.value)
+                          value: Number(h.value) // Keep exact value
                         }))} 
-                        heartRateLatest={`${selectedDevice.heartRate.toFixed(1)} bpm`} 
-                        temperatureLatest={`${selectedDevice.temperature.toFixed(1)}°F`} 
-                        respiratoryRateLatest={`${selectedDevice.respiratoryRate.toFixed(1)} bpm`} 
-                        bloodPressureLatest="120/80 mmHg"
+                        heartRateLatest={`${selectedDevice.heartRate} bpm`} // Remove toFixed
+                        temperatureLatest={`${selectedDevice.temperature}°F`} // Remove toFixed
+                        respiratoryRateLatest={`${selectedDevice.respiratoryRate} bpm`} // Remove toFixed
+                        bloodPressureLatest={`${selectedDevice.bloodPressure}/80 mmHg`} // Remove toFixed
                       />
                     </div>
                   ) : (
