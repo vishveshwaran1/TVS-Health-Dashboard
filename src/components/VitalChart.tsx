@@ -1,258 +1,249 @@
-
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, BarChart, Bar } from "recharts";
-import { useState } from "react";
+import { ChartContainer, ChartTooltip, ChartLegend } from "@/components/ui/chart";
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid } from "recharts";
+import { supabase } from "../lib/supatest";
 
-interface VitalData {
-  time: string;
-  heartRate: number;
-  temperature: number;
-  respiratoryRate: number;
-  bloodPressure: number;
-}
-
+// Update VitalChartProps to remove the data props since we'll fetch directly
 interface VitalChartProps {
   title: string;
   subtitle: string;
-  heartRateData: Array<{
-    time: string;
-    value: number;
-  }>;
-  temperatureData: Array<{
-    time: string;
-    value: number;
-  }>;
-  respiratoryRateData: Array<{
-    time: string;
-    value: number;
-  }>;
-  heartRateLatest: string;
-  temperatureLatest: string;
-  respiratoryRateLatest: string;
-  bloodPressureLatest: string;
+  deviceId: string; // Add deviceId prop to identify which device to fetch
 }
 
-const VitalChart = ({
-  title,
-  subtitle,
-  heartRateData,
-  temperatureData,
-  respiratoryRateData,
-  heartRateLatest,
-  temperatureLatest,
-  respiratoryRateLatest,
-  bloodPressureLatest
-}: VitalChartProps) => {
-  const [selectedVital, setSelectedVital] = useState<'heartRate' | 'temperature' | 'respiratoryRate' | 'bloodPressure'>('heartRate');
+const MAX_HISTORY_POINTS = 10; // Number of points to show in chart
 
-  // Generate mock data for blood pressure over time
-  const bloodPressureData = heartRateData.map((item, index) => ({
-    time: item.time,
-    value: Math.floor(Math.random() * 40) + 100 // Random BP values between 100-140
-  }));
+const VitalChart = ({ title, subtitle, deviceId }: VitalChartProps) => {
+  // State for current values and history
+  const [currentData, setCurrentData] = useState({
+    heartRate: '--',
+    temperature: '--',
+    respiratoryRate: '--',
+    bloodPressure: '--'
+  });
 
-  // Combine the data
-  const combinedData: VitalData[] = heartRateData.map((hrItem, index) => ({
-    time: hrItem.time,
-    heartRate: hrItem.value,
-    temperature: temperatureData[index]?.value || 0,
-    respiratoryRate: respiratoryRateData[index]?.value || 0,
-    bloodPressure: bloodPressureData[index]?.value || 120
-  }));
+  const [chartData, setChartData] = useState<Array<{
+    time: string;
+    heartRate: number | null;
+    temperature: number | null;
+    respiratoryRate: number | null;
+    bloodPressure: number | null;
+  }>>([]);
 
-  const vitalOptions = [
-    { 
-      value: 'heartRate', 
-      label: 'Heart Rate', 
-      color: '#ef4444', 
-      unit: 'bpm', 
-      normalRange: '60-100 bpm', 
-      latest: heartRateLatest,
-      type: 'line'
-    },
-    { 
-      value: 'temperature', 
-      label: 'Temperature', 
-      color: '#3b82f6', 
-      unit: '°F', 
-      normalRange: '97-99°F', 
-      latest: temperatureLatest,
-      type: 'line'
-    },
-    { 
-      value: 'respiratoryRate', 
-      label: 'Respiratory Rate', 
-      color: '#06b6d4', 
-      unit: 'bpm', 
-      normalRange: '12-20 bpm', 
-      latest: respiratoryRateLatest,
-      type: 'line'
-    },
-    { 
-      value: 'bloodPressure', 
-      label: 'Blood Pressure', 
-      color: '#f59e0b', 
-      unit: 'mmHg', 
-      normalRange: '120/80 mmHg', 
-      latest: bloodPressureLatest,
-      type: 'line'
-    }
-  ];
+  // Fetch data and update state
+  useEffect(() => {
+    const fetchVitals = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("Health Status")
+          .select("*")
+          .eq("mac_address", deviceId)
+          .order("updated_at", { ascending: false })
+          .limit(MAX_HISTORY_POINTS);
 
-  const currentVital = vitalOptions.find(v => v.value === selectedVital)!;
+        if (error) throw error;
 
-  const chartConfig = {
-    [selectedVital]: {
-      label: currentVital.unit,
-      color: currentVital.color
-    }
+        if (data && data.length > 0) {
+          // Update current values from most recent reading
+          const latest = data[0];
+          setCurrentData({
+            heartRate: `${latest.heart_rate} bpm`,
+            temperature: `${latest.temperature}°F`,
+            respiratoryRate: `${latest.respiratory_rate} bpm`,
+            bloodPressure: `${latest.blood_pressure}/80 mmHg`
+          });
+
+          // Format historical data for chart
+          const formattedData = data.reverse().map(record => ({
+            time: new Date(record.updated_at).toLocaleTimeString(),
+            heartRate: Number(record.heart_rate),
+            temperature: Number(record.temperature),
+            respiratoryRate: Number(record.respiratory_rate),
+            bloodPressure: Number(record.blood_pressure?.split('/')[0]) // Extract systolic BP
+          }));
+
+          setChartData(formattedData);
+        }
+      } catch (err) {
+        console.error('Error fetching vitals:', err);
+      }
+    };
+
+    fetchVitals(); // Initial fetch
+    const interval = setInterval(fetchVitals, 1000); // Poll every second
+
+    return () => clearInterval(interval); // Cleanup on unmount
+  }, [deviceId]);
+
+  const colors = {
+    heartRate: '#ef4444',
+    temperature: '#3b82f6',
+    respiratoryRate: '#06b6d4',
+    bloodPressure: '#f59e0b'
   };
 
   return (
-    <div className="h-full w-full my-0 mx-0">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center space-x-3">
-          <p className="text-gray-600 text-xs">{subtitle}</p>
-          <Select value={selectedVital} onValueChange={(value: 'heartRate' | 'temperature' | 'respiratoryRate' | 'bloodPressure') => setSelectedVital(value)}>
-            <SelectTrigger className="w-48 h-7 text-xs bg-white border-gray-200">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-white border border-gray-200 shadow-lg z-50">
-              {vitalOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value} className="text-xs">
-                  <div className="flex items-center space-x-2">
-                    <div 
-                      className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: option.color }}
-                    ></div>
-                    <span>{option.label}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="text-right">
-          <p className="text-gray-600 text-xs">Latest: {currentVital.latest}</p>
-          <p className="text-gray-500 text-xs">Normal: {currentVital.normalRange}</p>
+    <div className="h-full w-full flex flex-col">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 flex-shrink-0">
+        <p className="text-gray-600 text-xs mb-2 sm:mb-0">{subtitle}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <p className="text-xs font-medium" style={{ color: colors.heartRate }}>
+            HR: {currentData.heartRate}
+          </p>
+          <p className="text-xs font-medium" style={{ color: colors.temperature }}>
+            Temp: {currentData.temperature}
+          </p>
+          <p className="text-xs font-medium" style={{ color: colors.respiratoryRate }}>
+            RR: {currentData.respiratoryRate}
+          </p>
+          <p className="text-xs font-medium" style={{ color: colors.bloodPressure }}>
+            BP: {currentData.bloodPressure}
+          </p>
         </div>
       </div>
-      <ChartContainer config={chartConfig} className="h-full w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          {currentVital.type === 'line' ? (
-            <LineChart data={combinedData} margin={{
-              top: 5,
-              right: 30,
-              left: 20,
-              bottom: 5
-            }}>
-              <XAxis 
-                dataKey="time" 
-                tick={{
-                  fill: '#6b7280',
-                  fontSize: 10
-                }} 
-                axisLine={{
-                  stroke: '#d1d5db'
-                }} 
-                tickLine={{
-                  stroke: '#d1d5db'
-                }} 
+
+      <div className="flex-1 min-h-0">
+        <ChartContainer 
+          className="h-full w-full"
+        >
+          <ResponsiveContainer>
+            <LineChart 
+              data={chartData}
+              margin={{ top: 10, right: 35, left: 40, bottom: 20 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+              
+              <XAxis
+                dataKey="time"
+                tick={{ fill: '#6b7280', fontSize: 10 }}
+                height={30} // Added fixed height for X-axis
+                interval="preserveStartEnd" // Ensures start and end labels are shown
+                tickMargin={8} // Added margin between ticks and axis line
               />
-              <YAxis 
-                tick={{
-                  fill: '#6b7280',
-                  fontSize: 10
-                }} 
-                axisLine={{
-                  stroke: '#d1d5db'
-                }} 
-                tickLine={{
-                  stroke: '#d1d5db'
-                }} 
+
+              <YAxis
+                yAxisId="universal"
+                orientation="left"
+                stroke="#6b7280"
+                domain={[0, 200]}
+                tickCount={21}
+                tick={{ fill: '#6b7280', fontSize: 10 }}
+                width={40} // Added fixed width for Y-axis
+                tickMargin={4} // Added margin between ticks and axis line
               />
+
               <ChartTooltip 
-                content={<ChartTooltipContent />} 
-                labelStyle={{
-                  color: '#6b7280'
-                }} 
-                contentStyle={{
-                  backgroundColor: 'white',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '8px'
-                }} 
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length) {
+                    return (
+                      <div className="rounded-lg border bg-white p-2 shadow-xl">
+                        <p className="mb-1 text-xs font-bold">{label}</p>
+                        {payload.map((entry: any) => {
+                          const value = entry.value;
+                          let displayValue = value;
+                          let unit = "";
+
+                          switch (entry.dataKey) {
+                            case "heartRate":
+                              unit = " bpm";
+                              break;
+                            case "temperature":
+                              unit = " °F";
+                              break;
+                            case "respiratoryRate":
+                              unit = " bpm";
+                              break;
+                            case "bloodPressure":
+                              unit = " mmHg";
+                              displayValue = `${value}/80`;
+                              break;
+                          }
+
+                          return (
+                            <p 
+                              key={entry.name} 
+                              className="text-xs" 
+                              style={{ color: entry.color }}
+                            >
+                              {`${entry.name}: ${displayValue}${unit}`}
+                            </p>
+                          );
+                        })}
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
               />
-              <Line 
-                type="monotone" 
-                dataKey={selectedVital} 
-                stroke={currentVital.color} 
-                strokeWidth={2} 
-                dot={{
-                  fill: currentVital.color,
-                  strokeWidth: 2,
-                  r: 3
-                }} 
-                activeDot={{
-                  r: 4,
-                  stroke: currentVital.color,
-                  strokeWidth: 2
-                }} 
+
+              <Line
+                type="monotone"
+                dataKey="heartRate"
+                name="Heart Rate"
+                stroke={colors.heartRate}
+                yAxisId="universal"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4, stroke: colors.heartRate, strokeWidth: 2 }}
+                connectNulls
+              />
+              <Line
+                type="monotone"
+                dataKey="temperature"
+                name="Temperature"
+                stroke={colors.temperature}
+                yAxisId="universal"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 4, stroke: colors.temperature, strokeWidth: 2 }}
+                connectNulls
+              />
+              <Line
+                type="monotone"
+                dataKey="respiratoryRate"
+                name="Respiratory Rate"
+                stroke={colors.respiratoryRate}
+                yAxisId="universal"
+                strokeWidth={2}
+                strokeDasharray="5 5"
+                dot={{ fill: colors.respiratoryRate, strokeWidth: 2, r: 3 }}
+                activeDot={{ r: 4, stroke: colors.respiratoryRate, strokeWidth: 2 }}
+                connectNulls
+              />
+              <Line
+                type="monotone"
+                dataKey="bloodPressure"
+                name="Blood Pressure"
+                stroke={colors.bloodPressure}
+                yAxisId="universal"
+                strokeWidth={2}
+                strokeDasharray="3 3"
+                dot={{ fill: colors.bloodPressure, strokeWidth: 2, r: 3 }}
+                activeDot={{ r: 4, stroke: colors.bloodPressure, strokeWidth: 2 }}
+                connectNulls
+              />
+
+              <ChartLegend 
+                verticalAlign="bottom"
+                height={36}
+                content={({ payload }) => (
+                  <div className="flex flex-wrap justify-center gap-4 pt-2"> {/* Added flex-wrap */}
+                    {payload?.map((entry: any) => (
+                      <div key={entry.name} className="flex items-center gap-2">
+                        <div 
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: entry.color }}
+                        />
+                        <span className="text-xs font-medium text-gray-700 whitespace-nowrap">{entry.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               />
             </LineChart>
-          ) : (
-            <BarChart data={combinedData} margin={{
-              top: 5,
-              right: 30,
-              left: 20,
-              bottom: 5
-            }}>
-              <XAxis 
-                dataKey="time" 
-                tick={{
-                  fill: '#6b7280',
-                  fontSize: 10
-                }} 
-                axisLine={{
-                  stroke: '#d1d5db'
-                }} 
-                tickLine={{
-                  stroke: '#d1d5db'
-                }} 
-              />
-              <YAxis 
-                tick={{
-                  fill: '#6b7280',
-                  fontSize: 10
-                }} 
-                axisLine={{
-                  stroke: '#d1d5db'
-                }} 
-                tickLine={{
-                  stroke: '#d1d5db'
-                }} 
-              />
-              <ChartTooltip 
-                content={<ChartTooltipContent />} 
-                labelStyle={{
-                  color: '#6b7280'
-                }} 
-                contentStyle={{
-                  backgroundColor: 'white',
-                  border: '1px solid #d1d5db',
-                  borderRadius: '8px'
-                }} 
-              />
-              <Bar 
-                dataKey={selectedVital} 
-                fill={currentVital.color}
-                radius={[4, 4, 0, 0]}
-              />
-            </BarChart>
-          )}
-        </ResponsiveContainer>
-      </ChartContainer>
+          </ResponsiveContainer>
+        </ChartContainer>
+      </div>
     </div>
   );
 };

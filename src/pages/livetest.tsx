@@ -9,7 +9,7 @@ import {
   Hourglass,
 } from "lucide-react";
 
-const MAC_ADDRESS ="EC:DA:3B:BE:66:1C"; // Replace with the actual MAC address
+const MAC_ADDRESS ="18:8B:0E:91:8B:98"; // Replace with the actual MAC address
 
 export default function VitalsDashboard() {
   const [data, setData] = useState({
