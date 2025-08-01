@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Heart, Thermometer, User, MapPin, Wifi, LogOut, Settings, Ruler, Weight, Droplets, WifiOff, Power, Download, FileText, UserPlus, Activity, Zap, Wind, Monitor, Phone } from "lucide-react";
+import { Heart, Thermometer, User, MapPin, Wifi, LogOut, Settings, Ruler, Weight, Droplets, WifiOff, Power, Download, FileText, UserPlus, Activity, Zap, Wind, Monitor, Phone, Hourglass } from "lucide-react";
 import PersonCard from "../components/PersonCard";
 import VitalChart from "../components/VitalChart";
 import EmployeeEntry from "../components/EmployeeEntry";
@@ -13,14 +13,6 @@ import { supabase } from '../lib/supatest';
 import LiveTest from "../pages/livetest";
 
 
-interface WorkEntry {
-  id: string;
-  date: string;
-  title: string;
-  description: string;
-  type: string;
-  downloadUrl: string;
-}
 interface Device {
   id: string;
   deviceName: string;
@@ -38,8 +30,6 @@ interface Device {
   contactNumber: string;
   photo: string;
   connected: boolean;
-  height: string;
-  weight: string;
   heartRateHistory: Array<{
     time: string;
     value: number;
@@ -52,7 +42,10 @@ interface Device {
     time: string;
     value: number;
   }>;
-  previousWork: WorkEntry[];
+  bloodPressureHistory: Array<{
+    time: string;
+    value: number;
+  }>;
   updated_at_raw: string;
 }
 interface DashboardPageProps {
@@ -69,8 +62,14 @@ const DashboardPage = ({
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [isEmployeeEntryOpen, setIsEmployeeEntryOpen] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
-
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
+  const [currentSessionDuration, setCurrentSessionDuration] = useState<number>(0);
+  const lastDataActivityTimeRef = useRef<number | null>(null);
+  const durationIntervalIdRef = useRef<NodeJS.Timeout | null>(null);
+  const dataTimeoutIdRef = useRef<NodeJS.Timeout | null>(null);
   const MAX_HISTORY_POINTS = 10;
+  const DATA_INACTIVITY_THRESHOLD_MS = 15000;
 
   // Auto-select first device on load
   useEffect(() => {
@@ -87,13 +86,11 @@ const DashboardPage = ({
       heartRate: row.heart_rate ?? 0,
       temperature: row.temperature ?? 0,
       respiratoryRate: row.respiratory_rate ?? 0,
-      bloodPressure: row.blood_pressure ?? 120,
+      bloodPressure: parseSystolicBP(row.blood_pressure),
       bloodGroup: "",
       contactNumber: "",
       photo: "/api/placeholder/150/150",
       connected: true,
-      height: row.height ?? "0",
-      weight: row.weight ?? "0",
       heartRateHistory: Array(MAX_HISTORY_POINTS).fill(null).map((_, i) => ({
         time: new Date(Date.now() - (MAX_HISTORY_POINTS - 1 - i) * 1000).toLocaleTimeString(),
         value: row.heart_rate ?? 0
@@ -106,7 +103,10 @@ const DashboardPage = ({
         time: new Date(Date.now() - (MAX_HISTORY_POINTS - 1 - i) * 1000).toLocaleTimeString(),
         value: row.respiratory_rate ?? 0
       })),
-      previousWork: [],
+      bloodPressureHistory: Array(MAX_HISTORY_POINTS).fill(null).map((_, i) => ({
+        time: new Date(Date.now() - (MAX_HISTORY_POINTS - 1 - i) * 1000).toLocaleTimeString(),
+        value: parseSystolicBP(row.blood_pressure)
+      })),
       updated_at_raw: row.updated_at,
     });
 
@@ -195,11 +195,6 @@ const DEVICE_ID = "hr-01";
       setSelectedDevice(device);
     }
   };
-  const handleDownload = (workEntry: WorkEntry) => {
-    // Simulate download - in real app this would trigger actual file download
-    console.log(`Downloading ${workEntry.title} for ${selectedDevice?.assignedPerson}`);
-    // window.open(workEntry.downloadUrl, '_blank');
-  };
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
@@ -245,14 +240,21 @@ console.log('New heart rate history:', newHeartRateHistory);
           value: newData.respiratory_rate || prev.respiratoryRate
         }].slice(-MAX_HISTORY_POINTS);
 
+        const newBloodPressureHistory = [...prev.bloodPressureHistory, {
+          time: currentTime,
+          value: newData.blood_pressure || prev.bloodPressure
+        }].slice(-MAX_HISTORY_POINTS);
+
         return {
           ...prev,
           heartRate: newData.heart_rate || prev.heartRate,
           temperature: newData.temperature || prev.temperature,
           respiratoryRate: newData.respiratory_rate || prev.respiratoryRate,
+          bloodPressure: newData.blood_pressure || prev.bloodPressure,
           heartRateHistory: newHeartRateHistory,
           temperatureHistory: newTempHistory,
-          respiratoryRateHistory: newRespHistory
+          respiratoryRateHistory: newRespHistory,
+          bloodPressureHistory: newBloodPressureHistory
         };
       });
     };
@@ -359,62 +361,35 @@ console.log('New heart rate history:', newHeartRateHistory);
 
     const handleRealtimeUpdate = (payload: any) => {
       const newData = payload.new;
-      // Use precise timestamp for accurate timing
       const now = new Date();
-      const timeString = now.toLocaleTimeString('en-US', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-      }) + '.' + String(now.getMilliseconds()).padStart(3, '0');
-
-      // Parse values without rounding
-      const parseValue = (value: any, fallback: number) => {
-        const parsed = Number(value);
-        return !isNaN(parsed) ? parsed : fallback;
-      };
+      const currentTime = now.toLocaleTimeString();
 
       setSelectedDevice(prev => {
         if (!prev) return null;
 
-        // Get exact values from Supabase
-        const newHeartRate = parseValue(newData.heart_rate, prev.heartRate);
-        const newTemperature = parseValue(newData.temperature, prev.temperature);
-        const newRespiratoryRate = parseValue(newData.respiratory_rate, prev.respiratoryRate);
-        const newBloodPressure = parseValue(newData.blood_pressure, prev.bloodPressure);
-
-        // Update history with exact values
-        const updateHistory = (history: Array<{time: string; value: number}>, newValue: number) => {
+        // Update histories
+        const updateHistory = (history: Array<{ time: string; value: number }>, newValue: number) => {
           const newHistory = [...history];
-          if (newHistory.length >= MAX_HISTORY_POINTS) {
-            newHistory.shift();
-          }
-          newHistory.push({
-            time: timeString,
-            value: newValue // Store exact value without rounding
-          });
+          newHistory.shift();
+          newHistory.push({ time: currentTime, value: newValue });
           return newHistory;
         };
 
-        // Log exact values for debugging
-        console.log('Raw update values:', {
-          heartRate: newData.heart_rate,
-          temperature: newData.temperature,
-          respiratoryRate: newData.respiratory_rate,
-          timestamp: timeString
-        });
+        const newHeartRateHistory = updateHistory(prev.heartRateHistory, newData.heart_rate ?? prev.heartRate);
+        const newTempHistory = updateHistory(prev.temperatureHistory, newData.temperature ?? prev.temperature);
+        const newRespHistory = updateHistory(prev.respiratoryRateHistory, newData.respiratory_rate ?? prev.respiratoryRate);
+        const newBPHistory = updateHistory(prev.bloodPressureHistory, newData.blood_pressure ?? prev.bloodPressure);
 
         return {
           ...prev,
-          heartRate: newHeartRate,
-          temperature: newTemperature,
-          respiratoryRate: newRespiratoryRate,
-          bloodPressure: newBloodPressure,
-          heartRateHistory: updateHistory(prev.heartRateHistory, newHeartRate),
-          temperatureHistory: updateHistory(prev.temperatureHistory, newTemperature),
-          respiratoryRateHistory: updateHistory(prev.respiratoryRateHistory, newRespiratoryRate),
-          status: determineDeviceStatus(newHeartRate, newTemperature, newRespiratoryRate),
-          updated_at_raw: newData.updated_at
+          heartRate: newData.heart_rate ?? prev.heartRate,
+          temperature: newData.temperature ?? prev.temperature,
+          respiratoryRate: newData.respiratory_rate ?? prev.respiratoryRate,
+          bloodPressure: newData.blood_pressure ?? prev.bloodPressure,
+          heartRateHistory: newHeartRateHistory,
+          temperatureHistory: newTempHistory,
+          respiratoryRateHistory: newRespHistory,
+          bloodPressureHistory: newBPHistory
         };
       });
     };
@@ -445,6 +420,42 @@ console.log('New heart rate history:', newHeartRateHistory);
     };
   }, [selectedDevice?.connected, selectedDevice?.mac]);
 
+  // Session cleanup effect
+useEffect(() => {
+  return () => {
+    if (durationIntervalIdRef.current) {
+      clearInterval(durationIntervalIdRef.current);
+      durationIntervalIdRef.current = null;
+    }
+    if (dataTimeoutIdRef.current) {
+      clearTimeout(dataTimeoutIdRef.current);
+      dataTimeoutIdRef.current = null;
+    }
+    setSessionStartTime(null);
+    setSessionEndTime(null);
+    setCurrentSessionDuration(0);
+    lastDataActivityTimeRef.current = null;
+  };
+}, [selectedDevice?.id]);
+
+// Duration timer effect
+useEffect(() => {
+  if (sessionStartTime && sessionEndTime === null) {
+    if (durationIntervalIdRef.current === null) {
+      durationIntervalIdRef.current = setInterval(() => {
+        const nowTime = Date.now();
+        const currentStartTime = sessionStartTime.getTime();
+        setCurrentSessionDuration(Math.floor((nowTime - currentStartTime) / 1000));
+      }, 1000);
+    }
+  } else {
+    if (durationIntervalIdRef.current) {
+      clearInterval(durationIntervalIdRef.current);
+      durationIntervalIdRef.current = null;
+    }
+  }
+}, [sessionStartTime, sessionEndTime]);
+
   // Add this helper function
   const determineDeviceStatus = (heartRate: number, temperature: number, respiratoryRate: number): 'normal' | 'warning' | 'critical' => {
   if (heartRate < 60 || heartRate > 100) return 'critical';
@@ -456,6 +467,15 @@ console.log('New heart rate history:', newHeartRateHistory);
   if (respiratoryRate < 14 || respiratoryRate > 18) return 'warning';
   
   return 'normal';
+};
+
+const formatDuration = (seconds: number): string => {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+
+  const pad = (num: number) => num.toString().padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 };
 
   return <div className="h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-4 py-2 overflow-hidden">
@@ -524,9 +544,10 @@ console.log('New heart rate history:', newHeartRateHistory);
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 h-[calc(100vh-8rem)]">
-        {/* Left Sidebar - Device Profile */}
-        <div className="px-2 xl:col-span-1 flex flex-col space-y-3 mb-4 xl:mb-0 h-full">
-          <Card className="bg-white rounded-3xl shadow-lg border-0 flex-1 transform transition-all duration-300 hover:shadow-xl p-2">
+        {/* Left Sidebar - Device Profile, Employee Details, and Work Session */}
+        <div className="px-2 xl:col-span-1 flex flex-col space-y-2 mb-4 xl:mb-0">
+          {/* Device Profile Card - remains unchanged */}
+          <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl p-1">
               <CardContent className="p-2 m-auto">
                               {/* Device Selection Dropdown */}
                 <div className="mb-3 text-center">
@@ -616,8 +637,8 @@ console.log('New heart rate history:', newHeartRateHistory);
             </CardContent>
           </Card>
 
-          {/* Employee Details */}
-          <Card className="bg-white rounded-3xl shadow-lg border-0 flex-1 transform transition-all duration-300 hover:shadow-xl">
+          {/* Employee Details Card - remains unchanged */}
+          <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
             <CardHeader className="pb-2 px-3 pt-3">
               <CardTitle className="text-gray-900 text-[16px] font-semibold">Employee Details</CardTitle>
             </CardHeader>
@@ -670,6 +691,74 @@ console.log('New heart rate history:', newHeartRateHistory);
               </div>
             </CardContent>
           </Card>
+
+          {/* Device Work Session Card - moved from main content */}
+          {selectedDevice && (
+    <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
+      <CardHeader className="pb-1 px-2 pt-2">
+        <CardTitle className="text-gray-900 text-sm font-bold">
+          Work Session Status
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="p-2 pt-0">
+        <div className="space-y-2">
+          {/* Start Time and Status */}
+          <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-blue-50 to-blue-100 rounded-md border border-blue-200">
+            <Zap className="w-3 h-3 text-blue-600" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Start Time</p>
+              <p className="text-[10px] font-semibold text-gray-900">
+                {sessionStartTime ? sessionStartTime.toLocaleTimeString('en-US', { 
+                  hour: '2-digit', 
+                  minute: '2-digit',
+                  hour12: true 
+                }) : "--:--:-- AM/PM"}
+              </p>
+            </div>
+            <div className="flex items-center space-x-1">
+              <Wind className="w-3 h-3 text-gray-600" />
+              <p className="text-[10px] font-semibold text-gray-900">
+                {sessionStartTime && sessionEndTime === null ? "Active" : "Inactive"}
+              </p>
+            </div>
+          </div>
+
+          {/* Duration and End Time */}
+          <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-red-50 to-red-100 rounded-md border border-red-200">
+            <Activity className="w-3 h-3 text-red-600" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Duration</p>
+              <p className="text-[10px] font-semibold text-gray-900">
+                {formatDuration(currentSessionDuration)}
+              </p>
+            </div>
+            <div className="flex items-center space-x-1">
+              <Hourglass className="w-3 h-3 text-gray-600" />
+              <p className="text-[10px] font-semibold text-gray-900">
+                {sessionEndTime ? sessionEndTime.toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true
+                }) : "--:--"}
+              </p>
+            </div>
+          </div>
+
+          {/* Status Messages */}
+          {!selectedDevice.connected && (
+            <p className="text-[10px] text-center text-gray-500 font-medium">
+              Device disconnected
+            </p>
+          )}
+          {selectedDevice.connected && !sessionStartTime && !sessionEndTime && (
+            <p className="text-[10px] text-center text-gray-500 font-medium">
+              Waiting for data...
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )}
         </div>
 
         {/* Main Content */}
@@ -680,108 +769,41 @@ console.log('New heart rate history:', newHeartRateHistory);
               
                 <LiveTest />
                
-             
-
               {/* Activity Growth Chart */}
-              <Card className="bg-white py-4 px-2 shadow-lg border-0 flex-1 transform transition-all duration-300 hover:shadow-xl">
-                <CardHeader className="pb-2 px-3 pt-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-1 sm:space-y-0">
-                    <CardTitle className="text-gray-900 text-sm font-bold">Live Monitoring - {selectedDevice.deviceName}</CardTitle>
-                    <div className="flex items-center space-x-1">
-                      <div className={`w-2 h-2 rounded-full ${selectedDevice.connected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
-                      <span className="text-xs text-gray-600 font-medium">
-                        {selectedDevice.connected ? 'Live' : 'Offline'}
-                      </span>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="p-3 pt-0">
-                  {selectedDevice.connected ? (
-                    <div className="h-48 min-h-[200px]">
-                      <VitalChart 
-                        key={`vital-chart-${selectedDevice.id}-${Date.now()}`}
-                        title="Vital Signs" 
-                        subtitle="Real-time monitoring" 
-                        heartRateData={selectedDevice.heartRateHistory.map(h => ({
-                          time: h.time,
-                          value: Number(h.value) // Keep exact value
-                        }))} 
-                        temperatureData={selectedDevice.temperatureHistory.map(h => ({
-                          time: h.time,
-                          value: Number(h.value) // Keep exact value
-                        }))} 
-                        respiratoryRateData={selectedDevice.respiratoryRateHistory.map(h => ({
-                          time: h.time,
-                          value: Number(h.value) // Keep exact value
-                        }))} 
-                        heartRateLatest={`${selectedDevice.heartRate} bpm`} // Remove toFixed
-                        temperatureLatest={`${selectedDevice.temperature}°F`} // Remove toFixed
-                        respiratoryRateLatest={`${selectedDevice.respiratoryRate} bpm`} // Remove toFixed
-                        bloodPressureLatest={`${selectedDevice.bloodPressure}/80 mmHg`} // Remove toFixed
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-44 text-gray-500">
-                      <div className="text-center">
-                        <WifiOff className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm font-medium">Device Disconnected</p>
-                        <p className="text-xs text-gray-400">Connect to view live data</p>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-              
-              {/* Previous Work Section */}
-              {selectedDevice && (
-                <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
-                                  <CardHeader className="pb-2 px-3 pt-3">
-                  <CardTitle className="text-gray-900 text-sm font-bold">Device Work History - {selectedDevice.deviceName}</CardTitle>
-                  <p className="text-xs text-gray-600">{getCurrentDate()}</p>
-                </CardHeader>
-                  <CardContent className="p-3 pt-0">
-                    <div className="space-y-2">
-                      {selectedDevice.previousWork.map(work => (
-                        <div key={work.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-2 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg border border-gray-100 hover:border-blue-200 hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100 transition-all duration-300 transform hover:scale-[1.02]">
-                          <div className="flex items-center space-x-2 mb-2 sm:mb-0">
-                            <div className="w-8 h-8 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg flex items-center justify-center">
-                              <FileText className="w-4 h-4 text-blue-600" />
-                            </div>
-                              <div>
-                                <p className="font-semibold text-gray-900 text-xs">{work.title}</p>
-                                
-                                <div className="flex flex-col sm:flex-row sm:items-center space-y-0.5 sm:space-y-0 sm:space-x-1 mt-0.5">
-                                  <span className="text-[8px] text-gray-500">{formatDate(work.date)}</span>
-                                  <span className="hidden sm:inline text-[8px] text-gray-400">•</span>
-                                  <Badge variant="outline" className="text-[8px] px-1 py-0.5 w-fit">
-                                    {work.type}
-                                  </Badge>
-                                  <span className="hidden sm:inline text-[8px] text-gray-400">•</span>
-                                  <span className="text-[8px] text-blue-600">Assigned: {selectedDevice.assignedPerson}</span>
-                                </div>
-                              </div>
-                          </div>
-                          <Button 
-                            onClick={() => handleDownload(work)} 
-                            size="sm" 
-                            variant="outline" 
-                            className="shrink-0 bg-white hover:bg-blue-50 border-gray-300 hover:border-blue-300 transition-all duration-300 transform hover:scale-105 text-[8px] px-2 py-1"
-                          >
-                            <Download className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      ))}
-                      {selectedDevice.previousWork.length === 0 && (
-                        <div className="text-center py-6 text-gray-500">
-                          <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm font-medium">No work history found for device {selectedDevice.deviceName}</p>
-                          <p className="text-xs text-gray-400">Device: {selectedDevice.deviceName}</p>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+              <Card className="bg-white shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
+  <CardHeader className="pb-2 px-3 pt-3">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-1 sm:space-y-0">
+      <CardTitle className="text-gray-900 text-sm font-bold">
+        Live Monitoring - {selectedDevice.deviceName}
+      </CardTitle>
+      <div className="flex items-center space-x-1">
+        <div className={`w-2 h-2 rounded-full ${selectedDevice.connected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
+        <span className="text-xs text-gray-600 font-medium">
+          {selectedDevice.connected ? 'Live' : 'Offline'}
+        </span>
+      </div>
+    </div>
+  </CardHeader>
+  <CardContent className="p-3 pt-0 flex-1">
+    {selectedDevice.connected ? (
+      <div className="h-full w-full">
+        <VitalChart 
+          title="Vital Signs"
+          subtitle="Real-time monitoring"
+          deviceId={selectedDevice.id}
+        />
+      </div>
+    ) : (
+      <div className="h-[400px] flex items-center justify-center text-gray-500"> {/* Match height for offline state */}
+        <div className="text-center">
+          <WifiOff className="w-12 h-12 mx-auto mb-2 opacity-50" />
+          <p className="text-sm font-medium">Device Disconnected</p>
+          <p className="text-xs text-gray-400">Connect to view live data</p>
+        </div>
+      </div>
+    )}
+  </CardContent>
+</Card>
             </div>
           ) : (
             <Card className="bg-white rounded-3xl shadow-lg border-0 h-full flex items-center justify-center transform transition-all duration-300 hover:shadow-xl">
@@ -798,4 +820,14 @@ console.log('New heart rate history:', newHeartRateHistory);
       </div>
     </div>;
 };
+
+// Helper function to parse blood pressure (add near other helper functions)
+const parseSystolicBP = (bpValue: string | number | null): number => {
+  if (bpValue === null) return 120; // Default value
+  if (typeof bpValue === 'number') return bpValue;
+  const parts = bpValue.split('/')[0];
+  const parsed = parseFloat(parts);
+  return isNaN(parsed) ? 120 : parsed;
+};
+
 export default DashboardPage;
