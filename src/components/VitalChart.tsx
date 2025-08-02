@@ -4,14 +4,13 @@ import { ChartContainer, ChartTooltip, ChartLegend } from "@/components/ui/chart
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid } from "recharts";
 import { supabase } from "../lib/supatest";
 
-// Update VitalChartProps to remove the data props since we'll fetch directly
 interface VitalChartProps {
   title: string;
   subtitle: string;
-  deviceId: string; // Add deviceId prop to identify which device to fetch
+  deviceId: string;
 }
 
-const MAX_HISTORY_POINTS = 10; // Number of points to show in chart
+const MAX_HISTORY_POINTS = 10;
 
 const VitalChart = ({ title, subtitle, deviceId }: VitalChartProps) => {
   // State for current values and history
@@ -105,6 +104,28 @@ const VitalChart = ({ title, subtitle, deviceId }: VitalChartProps) => {
       <div className="flex-1 min-h-0">
         <ChartContainer 
           className="h-full w-full"
+          config={{
+            line: {
+              color: "#000000",
+              label: "Line Chart"
+            },
+            heartRate: {
+              color: colors.heartRate,
+              label: "Heart Rate"
+            },
+            temperature: {
+              color: colors.temperature,
+              label: "Temperature"
+            },
+            respiratoryRate: {
+              color: colors.respiratoryRate,
+              label: "Respiratory Rate"
+            },
+            bloodPressure: {
+              color: colors.bloodPressure,
+              label: "Blood Pressure"
+            }
+          }}
         >
           <ResponsiveContainer>
             <LineChart 

@@ -769,41 +769,13 @@ const formatDuration = (seconds: number): string => {
               
                 <LiveTest />
                
-              {/* Activity Growth Chart */}
-              <Card className="bg-white shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
-  <CardHeader className="pb-2 px-3 pt-3">
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-1 sm:space-y-0">
-      <CardTitle className="text-gray-900 text-sm font-bold">
-        Live Monitoring - {selectedDevice.deviceName}
-      </CardTitle>
-      <div className="flex items-center space-x-1">
-        <div className={`w-2 h-2 rounded-full ${selectedDevice.connected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
-        <span className="text-xs text-gray-600 font-medium">
-          {selectedDevice.connected ? 'Live' : 'Offline'}
-        </span>
-      </div>
-    </div>
+  {/* Activity Growth Chart */}
+  <Card className="bg-white shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
+   <CardHeader className="pb-2 px-3 pt-3">
+   
   </CardHeader>
-  <CardContent className="p-3 pt-0 flex-1">
-    {selectedDevice.connected ? (
-      <div className="h-full w-full">
-        <VitalChart 
-          title="Vital Signs"
-          subtitle="Real-time monitoring"
-          deviceId={selectedDevice.id}
-        />
-      </div>
-    ) : (
-      <div className="h-[400px] flex items-center justify-center text-gray-500"> {/* Match height for offline state */}
-        <div className="text-center">
-          <WifiOff className="w-12 h-12 mx-auto mb-2 opacity-50" />
-          <p className="text-sm font-medium">Device Disconnected</p>
-          <p className="text-xs text-gray-400">Connect to view live data</p>
-        </div>
-      </div>
-    )}
-  </CardContent>
-</Card>
+
+ </Card>
             </div>
           ) : (
             <Card className="bg-white rounded-3xl shadow-lg border-0 h-full flex items-center justify-center transform transition-all duration-300 hover:shadow-xl">
