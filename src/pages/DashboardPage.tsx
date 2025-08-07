@@ -17,37 +17,34 @@ interface Device {
   id: string;
   deviceName: string;
   assignedPerson: string;
-  age: number;
-  gender: string;
-  location: string;
   mac: string;
-  status: 'normal' | 'warning' | 'critical';
   heartRate: number;
   temperature: number;
   respiratoryRate: number;
   bloodPressure: number;
+  connected: boolean;
+  lastActivity: Date;
+  heartRateHistory: Array<{ time: string; value: number }>;
+  temperatureHistory: Array<{ time: string; value: number }>;
+  respiratoryRateHistory: Array<{ time: string; value: number }>;
+  bloodPressureHistory: Array<{ time: string; value: number }>;
+  updated_at_raw: string;
+  age?: number;
+  gender?: string;
+  bloodGroup?: string;
+  contactNumber?: string;
+}
+
+interface Employee {
+  id: string;
+  name: string;
+  age: string;
+  gender: string;
+  location: string;
   bloodGroup: string;
   contactNumber: string;
-  photo: string;
-  connected: boolean;
-  heartRateHistory: Array<{
-    time: string;
-    value: number;
-  }>;
-  temperatureHistory: Array<{
-    time: string;
-    value: number;
-  }>;
-  respiratoryRateHistory: Array<{
-    time: string;
-    value: number;
-  }>;
-  bloodPressureHistory: Array<{
-    time: string;
-    value: number;
-  }>;
-  updated_at_raw: string;
 }
+
 interface DashboardPageProps {
   onLogout: () => void;
   onShowAdmin: () => void;
@@ -62,14 +59,19 @@ const DashboardPage = ({
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [isEmployeeEntryOpen, setIsEmployeeEntryOpen] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+  const [selectedEmployeeInCard, setSelectedEmployeeInCard] = useState<Employee | null>(null);
+  const employeeMap = new Map<string, { name: string }>();
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [sessionEndTime, setSessionEndTime] = useState<Date | null>(null);
   const [currentSessionDuration, setCurrentSessionDuration] = useState<number>(0);
   const lastDataActivityTimeRef = useRef<number | null>(null);
   const durationIntervalIdRef = useRef<NodeJS.Timeout | null>(null);
   const dataTimeoutIdRef = useRef<NodeJS.Timeout | null>(null);
+  const deviceTimeouts = useRef<Map<string, NodeJS.Timeout>>(new Map()).current;
   const MAX_HISTORY_POINTS = 10;
   const DATA_INACTIVITY_THRESHOLD_MS = 15000;
+  const DEVICE_OFFLINE_THRESHOLD = 15000; // 15 seconds
 
   // Auto-select first device on load
   useEffect(() => {
@@ -78,19 +80,13 @@ const DashboardPage = ({
       id: row.id,
       deviceName: row.mac_address || "Unknown Device",
       assignedPerson: "Unknown",
-      age: 0,
-      gender: "Unknown",
-      location: "Unknown",
       mac: row.mac_address || "",
-      status: determineDeviceStatus(row.heart_rate ?? 0, row.temperature ?? 0, row.respiratory_rate ?? 0),
       heartRate: row.heart_rate ?? 0,
       temperature: row.temperature ?? 0,
       respiratoryRate: row.respiratory_rate ?? 0,
       bloodPressure: parseSystolicBP(row.blood_pressure),
-      bloodGroup: "",
-      contactNumber: "",
-      photo: "/api/placeholder/150/150",
       connected: true,
+      lastActivity: new Date(row.updated_at),
       heartRateHistory: Array(MAX_HISTORY_POINTS).fill(null).map((_, i) => ({
         time: new Date(Date.now() - (MAX_HISTORY_POINTS - 1 - i) * 1000).toLocaleTimeString(),
         value: row.heart_rate ?? 0
@@ -135,16 +131,46 @@ const DEVICE_ID = "hr-01";
         data.forEach(row => {
           const mac = row.mac_address;
           if (mac) {
+            const employee = employeeMap.get(mac);
+            const lastUpdateTime = new Date(row.updated_at).getTime();
+            const isConnected = (Date.now() - lastUpdateTime) < DEVICE_OFFLINE_THRESHOLD;
+            
             if (!uniqueDevicesMap.has(mac) || 
                 new Date(row.updated_at) > new Date(uniqueDevicesMap.get(mac)!.updated_at_raw)) {
-              uniqueDevicesMap.set(mac, mapRowToDevice(row));
+              uniqueDevicesMap.set(mac, {
+                id: row.id,
+                deviceName: `Device ${mac}`,
+                assignedPerson: employee ? employee.name : "Unassigned",
+                mac: mac,
+                heartRate: row.heart_rate ?? 0,
+                temperature: row.temperature ?? 0,
+                respiratoryRate: row.respiratory_rate ?? 0,
+                bloodPressure: parseSystolicBP(row.blood_pressure),
+                connected: isConnected,
+                lastActivity: new Date(row.updated_at),
+                heartRateHistory: [], // Initialize histories
+                temperatureHistory: [],
+                respiratoryRateHistory: [],
+                bloodPressureHistory: [],
+                updated_at_raw: row.updated_at
+              });
+
+              // Set timeout for connection status
+              if (isConnected) {
+                if (deviceTimeouts.has(mac)) {
+                  clearTimeout(deviceTimeouts.get(mac)!);
+                }
+                deviceTimeouts.set(mac, setTimeout(() => {
+                  setDevices(prev => prev.map(d => 
+                    d.mac === mac ? { ...d, connected: false } : d
+                  ));
+                }, DEVICE_OFFLINE_THRESHOLD));
+              }
             }
           }
         });
 
-        const uniqueDevices = Array.from(uniqueDevicesMap.values());
-        console.log("Unique devices:", uniqueDevices);
-        setDevices(uniqueDevices);
+        setDevices(Array.from(uniqueDevicesMap.values()));
       }
     };
 
@@ -170,7 +196,7 @@ const DEVICE_ID = "hr-01";
     }
   }, [devices]);
   const handleConnect = (deviceId: string) => {
-    setDevices(prev => prev.map(device => device.id === deviceId ? {
+    setDevices(prev => prev.map((device) => device.id === deviceId ? {
       ...device,
       connected: !device.connected
     } : device));
@@ -478,6 +504,57 @@ const formatDuration = (seconds: number): string => {
   return `${pad(h)}:${pad(m)}:${pad(s)}`;
 };
 
+  const renderEmployeeDetails = () => {
+    if (!selectedDevice) return null;
+
+    return (
+      <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
+        <CardHeader className="pb-1 px-2 pt-2">
+          <CardTitle className="text-gray-900 text-sm font-bold">Employee Details</CardTitle>
+        </CardHeader>
+        <CardContent className="p-2 pt-0">
+          {selectedDevice.assignedPerson === "Unassigned" ? (
+            <div className="text-center py-2">
+              <User className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+              <p className="text-xs text-gray-500">No employee assigned</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <User className="w-4 h-4 text-blue-600" />
+                <span className="text-xs font-medium">{selectedDevice.assignedPerson}</span>
+              </div>
+              {selectedDevice.age && (
+                <div className="flex items-center space-x-2">
+                  <MapPin className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs">Age: {selectedDevice.age} years</span>
+                </div>
+              )}
+              {selectedDevice.gender && (
+                <div className="flex items-center space-x-2">
+                  <User className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs">Gender: {selectedDevice.gender}</span>
+                </div>
+              )}
+              {selectedDevice.bloodGroup && (
+                <div className="flex items-center space-x-2">
+                  <Droplets className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs">Blood Group: {selectedDevice.bloodGroup}</span>
+                </div>
+              )}
+              {selectedDevice.contactNumber && (
+                <div className="flex items-center space-x-2">
+                  <Phone className="w-4 h-4 text-blue-600" />
+                  <span className="text-xs">Contact: {selectedDevice.contactNumber}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
   return <div className="h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-4 py-2 overflow-hidden">
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4 lg:mb-6 space-y-3 lg:space-y-0 animate-fade-in">
@@ -511,23 +588,30 @@ const formatDuration = (seconds: number): string => {
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
               <EmployeeEntry 
                 onBack={() => setIsEmployeeEntryOpen(false)}
-                onAddEmployee={(employeeData) => {
-                  console.log('Employee added:', employeeData);
+                onAddEmployee={async (employeeData) => {
+                  const newEmployee = {
+                    id: crypto.randomUUID(),
+                    ...employeeData
+                  };
+                  
+                  setAllEmployees(prev => [...prev, newEmployee]);
+                  setSelectedEmployeeInCard(newEmployee);
                   setIsEmployeeEntryOpen(false);
 
+                  // Update selected device with employee info
                   setSelectedDevice(prevDevice => {
                     if (!prevDevice) return null;
-
                     return {
                       ...prevDevice,
-                      assignedPerson: employeeData.name,
-                      age: parseInt(employeeData.age),
-                      gender: employeeData.gender,
-                      bloodGroup: employeeData.bloodGroup,
-                      contactNumber: employeeData.contactNumber,
+                      assignedPerson: newEmployee.name,
+                      age: Number(newEmployee.age),
+                      gender: newEmployee.gender,
+                      bloodGroup: newEmployee.bloodGroup,
+                      contactNumber: newEmployee.contactNumber,
                     };
                   });
                 }}
+                supabaseClient={supabase}
               />
             </DialogContent>
           </Dialog>
@@ -548,149 +632,173 @@ const formatDuration = (seconds: number): string => {
         <div className="px-2 xl:col-span-1 flex flex-col space-y-2 mb-4 xl:mb-0">
           {/* Device Profile Card - remains unchanged */}
           <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl p-1">
-              <CardContent className="p-2 m-auto">
-                              {/* Device Selection Dropdown */}
-                <div className="mb-3 text-center">
-                <Select value={selectedDevice?.id || ""} onValueChange={handleDeviceSelect}>
-                  <SelectTrigger className="w-full bg-white border-2 border-gray-200 hover:border-blue-300 transition-colors duration-300 rounded-xl">
-                    <SelectValue placeholder="Select a device" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-white border border-gray-200 shadow-xl z-50 rounded-xl">
-                    {devices.map(device => (
-                      <SelectItem key={device.id} value={device.id} className="cursor-pointer hover:bg-blue-50 transition-colors duration-200">
-                                                  <div className="flex items-center space-x-2 w-full">
-                            <div className="w-6 h-6 bg-blue-100 rounded-md flex items-center justify-center">
-                              <Monitor className="w-3 h-3 text-blue-600" />
-                            </div>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between space-x-1">
-                              <span className="font-medium text-gray-900 text-s">{device.deviceName}</span>
-                              <div className="flex items-center space-x-2">
-                                <Badge className={`text-[8px] px-1 py-0.5 ${device.status === 'normal' ? 'bg-green-100 text-green-800' : device.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                                  {device.status}
-                                </Badge>
-                                <div className={`w-2 h-2 rounded-full ${device.connected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`}></div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+  <CardContent className="p-2 m-auto">
+    {/* Device Selection Dropdown */}
+    <div className="mb-3 text-center">
+      <Select value={selectedDevice?.id || ""} onValueChange={handleDeviceSelect}>
+        <SelectTrigger className="w-full bg-white border-2 border-gray-200 hover:border-blue-300 transition-colors duration-300 rounded-xl">
+          <SelectValue placeholder="Select a device" />
+        </SelectTrigger>
+        <SelectContent className="bg-white border border-gray-200 shadow-xl z-50 rounded-xl">
+          {devices.map(device => (
+            <SelectItem 
+              key={device.id} 
+              value={device.id} 
+              className="cursor-pointer hover:bg-blue-50 transition-colors duration-200"
+            >
+              <div className="flex items-center space-x-2 w-full">
+                <div className="w-6 h-6 bg-blue-100 rounded-md flex items-center justify-center">
+                  <Monitor className="w-3 h-3 text-blue-600" />
+                </div>
+                <div className="flex items-center justify-between w-full">
+                  <span className="font-medium text-gray-900 text-s">{device.deviceName}</span>
+                  <div className={`w-2 h-2 rounded-full ${device.connected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
+                </div>
               </div>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
 
-              {selectedDevice ? (
-                <div className="text-center h-full flex flex-col justify-between animate-fade-in">
-                  <div className="mb-4">
-                    <div className="w-16 h-16 mx-auto mb-2 rounded-xl bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center shadow-lg transform transition-all duration-300 hover:scale-110">
-                      <Monitor className="w-8 h-8 text-blue-600" />
-                    </div>
-                    <h3 className="text-[16px] font-bold text-gray-900 mb-1">{selectedDevice.deviceName}</h3>
-                    <p className="text-gray-600 text-[10px] mb-1">Assigned to: {selectedDevice.assignedPerson}</p>
-                    <p className="text-gray-500 text-[10px] mb-1">MAC: {selectedDevice.mac}</p>
-                    
-                    {/* Connection Status */}
-                    <div className="flex items-center justify-center space-x-2 mb-1">
-                      <div className={`w-2 h-2 rounded-full ${selectedDevice.connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
-                      <span className={`text-[10px] font-medium ${selectedDevice.connected ? 'text-green-600' : 'text-red-600'}`}>
-                        {selectedDevice.connected ? 'Connected' : 'Disconnected'}
-                      </span>
-                    </div>
+    {selectedDevice ? (
+      <div className="text-center animate-fade-in">
+        <div className="mb-4">
+          <div className="w-16 h-16 mx-auto mb-2 rounded-xl bg-gradient-to-br from-blue-100 to-purple-100 flex items-center justify-center shadow-lg transform transition-all duration-300 hover:scale-110">
+            <Monitor className="w-8 h-8 text-blue-600" />
+          </div>
+          <h3 className="text-[16px] font-bold text-gray-900 mb-1">{selectedDevice.deviceName}</h3>
+          <p className="text-gray-600 text-[10px] mb-1">
+            {selectedDevice.assignedPerson !== "Unassigned" 
+              ? `Assigned to: ${selectedDevice.assignedPerson}`
+              : "No employee assigned"}
+          </p>
+          <p className="text-gray-500 text-[10px] mb-2">MAC: {selectedDevice.mac}</p>
+          
+          <div className="flex items-center justify-center space-x-2">
+            <div className={`w-2 h-2 rounded-full ${selectedDevice.connected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
+            <span className="text-[10px] font-medium text-gray-600">
+              {selectedDevice.connected ? 'Online' : 'Offline'}
+            </span>
+          </div>
+        </div>
+      </div>
+    ) : (
+      <div className="text-center py-6 animate-fade-in">
+        <Monitor className="w-16 h-16 mx-auto mb-3 opacity-50" />
+        <p className="text-gray-500 font-medium text-xs">Select a device</p>
+      </div>
+    )}
+  </CardContent>
+</Card>
 
-                    {/* Status Badge */}
-                    <div className="mb-2">
-                      <Badge className={`text-[10px] px-2 py-0.5 ${selectedDevice.status === 'normal' ? 'bg-green-100 text-green-800' : selectedDevice.status === 'warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                        Status: {selectedDevice.status.charAt(0).toUpperCase() + selectedDevice.status.slice(1)}
-                      </Badge>
-                    </div>
-                  </div>
-                  
-                  {/* Connect Button */}
-                  <Button 
-                    onClick={() => handleConnect(selectedDevice.id)} 
-                    className={`w-full py-2 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 text-xs ${
-                      selectedDevice.connected 
-                        ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700' 
-                        : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700'
-                    } text-white shadow-lg hover:shadow-xl`}
-                  >
-                    {selectedDevice.connected ? (
-                      <>
-                        <WifiOff className="w-3 h-3 mr-1" />
-                        Disconnect
-                      </>
-                    ) : (
-                      <>
-                        <Wifi className="w-3 h-3 mr-1" />
-                        Connect
-                      </>
-                    )}
-                  </Button>
-                </div>
-              ) : (
-                <div className="text-center py-6 animate-fade-in">
-                  <Monitor className="w-16 h-16 mx-auto mb-3 opacity-50" />
-                  <p className="text-gray-500 font-medium text-xs">Select a device</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Employee Details Card - remains unchanged */}
+          {/* Employee Details Card - updated as per suggestion */}
           <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
-            <CardHeader className="pb-2 px-3 pt-3">
-              <CardTitle className="text-gray-900 text-[16px] font-semibold">Employee Details</CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 pt-0">
-              <div className="space-y-2 animate-fade-in">
-                {selectedDevice && (
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-blue-50 rounded-md border border-gray-100 hover:border-blue-200 transition-all duration-300">
-                      <User className="w-3 h-3 text-blue-600 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Name</p>
-                        <p className="text-[12px] font-semibold text-gray-900 truncate">{selectedDevice.assignedPerson}</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                      <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-green-50 rounded-md border border-gray-100 hover:border-green-200 transition-all duration-300">
-                        <User className="w-3 h-3 text-green-600 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Age</p>
-                          <p className="text-xs font-semibold text-gray-900">{selectedDevice.age}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-purple-50 rounded-md border border-gray-100 hover:border-purple-200 transition-all duration-300">
-                        <User className="w-3 h-3 text-purple-600 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Gender</p>
-                          <p className="text-xs font-semibold text-gray-900">{selectedDevice.gender}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-red-50 rounded-md border border-gray-100 hover:border-red-200 transition-all duration-300">
-                      <Droplets className="w-3 h-3 text-red-600 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Blood Group</p>
-                        <p className="text-xs font-semibold text-gray-900">{selectedDevice.bloodGroup}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-orange-50 rounded-md border border-gray-100 hover:border-orange-200 transition-all duration-300">
-                      <Phone className="w-3 h-3 text-orange-600 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Contact</p>
-                        <p className="text-xs font-semibold text-gray-900">{selectedDevice.contactNumber}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+  <CardHeader className="pb-2 px-3 pt-3">
+    <CardTitle className="text-gray-900 text-[16px] font-semibold">Employee Details</CardTitle>
+  </CardHeader>
+  <CardContent className="p-3 pt-0">
+    <div className="space-y-2 animate-fade-in">
+      {/* Employee Selection Dropdown */}
+      <Select
+        value={selectedEmployeeInCard?.id || ""}
+        onValueChange={(id) => {
+          const selected = allEmployees.find(emp => emp.id === id);
+          setSelectedEmployeeInCard(selected || null);
+        }}
+      >
+        <SelectTrigger className="w-full h-8 bg-white border-2 border-gray-200 hover:border-blue-300 transition-colors duration-300 rounded-xl text-xs">
+          <SelectValue placeholder="Select an employee" />
+        </SelectTrigger>
+        <SelectContent className="bg-white border border-gray-200 shadow-xl z-50 rounded-xl">
+          {allEmployees.map(employee => (
+            <SelectItem 
+              key={employee.id} 
+              value={employee.id} 
+              className="cursor-pointer hover:bg-blue-50 transition-colors duration-200"
+            >
+              <div className="flex items-center space-x-2 w-full">
+                <User className="w-4 h-4 text-gray-600" />
+                <span className="font-medium text-gray-900 text-sm">{employee.name}</span>
               </div>
-            </CardContent>
-          </Card>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      {/* Display Employee Details */}
+      {selectedEmployeeInCard ? (
+        <div className="space-y-1 mt-2">
+          <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-blue-50 rounded-md border border-gray-100">
+            <User className="w-3 h-3 text-blue-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Name</p>
+              <p className="text-[12px] font-semibold text-gray-900 truncate">
+                {selectedEmployeeInCard.name}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1">
+            <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-green-50 rounded-md border border-gray-100">
+              <User className="w-3 h-3 text-green-600 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Age</p>
+                <p className="text-xs font-semibold text-gray-900">
+                  {selectedEmployeeInCard.age}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-purple-50 rounded-md border border-gray-100">
+              <User className="w-3 h-3 text-purple-600 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Gender</p>
+                <p className="text-xs font-semibold text-gray-900">
+                  {selectedEmployeeInCard.gender}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-cyan-50 rounded-md border border-gray-100">
+            <MapPin className="w-3 h-3 text-cyan-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Location</p>
+              <p className="text-xs font-semibold text-gray-900">
+                {selectedEmployeeInCard.location}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-red-50 rounded-md border border-gray-100">
+            <Droplets className="w-3 h-3 text-red-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Blood Group</p>
+              <p className="text-xs font-semibold text-gray-900">
+                {selectedEmployeeInCard.bloodGroup}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-gray-50 to-orange-50 rounded-md border border-gray-100">
+            <Phone className="w-3 h-3 text-orange-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Contact</p>
+              <p className="text-xs font-semibold text-gray-900">
+                {selectedEmployeeInCard.contactNumber}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="text-center py-6">
+          <User className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+          <p className="text-xs text-gray-500">No employee selected</p>
+        </div>
+      )}
+    </div>
+  </CardContent>
+</Card>
 
           {/* Device Work Session Card - moved from main content */}
           {selectedDevice && (
