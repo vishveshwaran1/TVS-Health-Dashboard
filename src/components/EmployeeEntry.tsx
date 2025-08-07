@@ -6,18 +6,19 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Upload, User, Save, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { SupabaseClient } from "@supabase/supabase-js";
 
 interface EmployeeEntryProps {
   onBack: () => void;
-  onAddEmployee: (employee: {
-     name: string;
-  age: string;
-  gender: string;
-  height: string;
-  weight: string;
-  bloodGroup: string;
-  contactNumber: string;
-  }) => void;
+  onAddEmployee: (employee: { 
+    name: string;
+    age: string;
+    gender: string;
+    location: string;
+    bloodGroup: string;
+    contactNumber: string;
+  }) => Promise<void>;
+  supabaseClient: SupabaseClient;
 }
 
 const EmployeeEntry = ({ onBack, onAddEmployee }: EmployeeEntryProps) => {
@@ -28,63 +29,39 @@ const EmployeeEntry = ({ onBack, onAddEmployee }: EmployeeEntryProps) => {
     age: '',
     gender: 'Male',
     location: '',
-    height: '',
-    weight: '',
     bloodGroup: '',
-    contactNumber: '',
-    autoGenerateMAC: true
+    contactNumber: ''
   });
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setImagePreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Add new employee with all required fields
-    onAddEmployee({
+
+    const newEmployeeData = {
       name: `${formData.firstName} ${formData.lastName}`,
       age: formData.age,
       gender: formData.gender,
-      height: formData.height || 'Not specified', // Add height field to form
-      weight: formData.weight || 'Not specified', // Add weight field to form
+      location: formData.location,
       bloodGroup: formData.bloodGroup,
       contactNumber: formData.contactNumber,
-    });
+    };
 
-    // Success toast
+    await onAddEmployee(newEmployeeData);
+
     toast({
-      title: "Employee Added",
-      description: `${formData.firstName} ${formData.lastName} has been successfully added to the system.`,
+      title: "Success",
+      description: `${formData.firstName} ${formData.lastName} has been added successfully.`,
     });
 
-    // Reset form
     setFormData({
       firstName: '',
       lastName: '',
       age: '',
       gender: 'Male',
       location: '',
-      height: '',
-      weight: '',
       bloodGroup: '',
-      contactNumber: '',
-      autoGenerateMAC: true
+      contactNumber: ''
     });
-    
-    setImageFile(null);
-    setImagePreview(null);
+
     onBack();
   };
 
@@ -191,55 +168,6 @@ const EmployeeEntry = ({ onBack, onAddEmployee }: EmployeeEntryProps) => {
               placeholder="Phone number"
               required
             />
-          </div>
-        </div>
-
-        {/* Auto-generate MAC Address */}
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="autoGenerateMAC"
-            checked={formData.autoGenerateMAC}
-            onCheckedChange={(checked) => setFormData({...formData, autoGenerateMAC: checked as boolean})}
-            className="border-white data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
-          />
-          <Label htmlFor="autoGenerateMAC" className="font-medium">
-            Auto-generate MAC Address
-          </Label>
-        </div>
-
-        {/* Photo Upload */}
-        <div>
-          <Label className="font-medium">Photo</Label>
-          <div className="mt-2">
-            <div className="flex items-center">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
-                id="image-upload"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                className="bg-white text-black border-gray-300 hover:bg-gray-50"
-                onClick={() => document.getElementById('image-upload')?.click()}
-              >
-                Choose File
-              </Button>
-              <span className=" text-sm ml-2">
-                {imageFile ? imageFile.name : 'No file chosen'}
-              </span>
-            </div>
-            {imagePreview && (
-              <div className="mt-4">
-                <img
-                  src={imagePreview}
-                  alt="Employee preview"
-                  className="w-24 h-24 object-cover rounded-lg border-2 border-gray-300"
-                />
-              </div>
-            )}
           </div>
         </div>
 

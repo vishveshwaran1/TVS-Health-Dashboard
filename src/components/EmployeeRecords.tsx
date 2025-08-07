@@ -132,7 +132,14 @@ const EmployeeRecords = ({ onBack }: EmployeeRecordsProps) => {
               <DialogTitle className="text-black text-2xl">Add New Employee</DialogTitle>
             </DialogHeader>
             <div className="mt-4">
-              <EmployeeEntry onBack={() => setIsEntryDialogOpen(false)} />
+              <EmployeeEntry 
+                onBack={() => setIsEntryDialogOpen(false)}
+                onAddEmployee={async (employee) => {
+                  await supabase.from('employees').insert([employee]);
+                  setIsEntryDialogOpen(false);
+                }}
+                supabaseClient={supabase}
+              />
             </div>
           </DialogContent>
         </Dialog>

@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supatest";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  HeartPulse,
-  Thermometer,
-  Activity,
-  Stethoscope,
-  Hourglass,
-} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { HeartPulse, Thermometer, Activity, Stethoscope, Hourglass } from "lucide-react";
+import VitalChart from "../components/VitalChart";
 
 const MAC_ADDRESS ="18:8B:0E:91:8B:98"; // Replace with the actual MAC address
 
@@ -79,43 +74,52 @@ export default function VitalsDashboard() {
   );
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4">
-      <VitalsCard
-        icon={HeartPulse}
-        title="Heart Rate"
-        value={data.heart_rate}
-        unit="bpm"
-        color="bg-red-500"
-      />
-      <VitalsCard
-        icon={Thermometer}
-        title="Temperature"
-        value={data.temperature?.toFixed(1)}
-        unit="°C"
-        color="bg-blue-500"
-      />
-      <VitalsCard
-        icon={Stethoscope}
-        title="Blood Pressure"
-        value={data.blood_pressure}
-        unit="mmHg"
-        color="bg-purple-500"
-      />
-      <VitalsCard
-        icon={Activity}
-        title="Respiratory Rate"
-        value={data.respiratory_rate}
-        unit="rpm"
-        color="bg-green-500"
-      />
-       <VitalsCard
-        icon={Hourglass}
-        title="body activity"
-        value={data.respiratory_rate}
-        unit="rpm"
-        color="bg-blue-500"
-      />
-      
+    <div className="space-y-4">
+      {/* Vital Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <VitalsCard
+          icon={HeartPulse}
+          title="Heart Rate"
+          value={data.heart_rate}
+          unit="bpm"
+          color="bg-red-500"
+        />
+        <VitalsCard
+          icon={Thermometer}
+          title="Temperature"
+          value={data.temperature?.toFixed(1)}
+          unit="°C"
+          color="bg-blue-500"
+        />
+        <VitalsCard
+          icon={Stethoscope}
+          title="Blood Pressure"
+          value={data.blood_pressure}
+          unit="mmHg"
+          color="bg-purple-500"
+        />
+        <VitalsCard
+          icon={Activity}
+          title="Respiratory Rate"
+          value={data.respiratory_rate}
+          unit="rpm"
+          color="bg-green-500"
+        />
+      </div>
+
+      {/* Live Chart */}
+      <Card className="bg-white rounded-xl shadow-lg">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-semibold">Live Monitoring</CardTitle>
+        </CardHeader>
+        <CardContent className="h-[400px]"> {/* Fixed height container for the chart */}
+          <VitalChart
+            title="Vital Signs"
+            subtitle="Real-time monitoring"
+            deviceId={MAC_ADDRESS}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }
