@@ -11,6 +11,8 @@ import VitalChart from "../components/VitalChart";
 import EmployeeEntry from "../components/EmployeeEntry";
 import { supabase } from '../lib/supatest';
 import LiveTest from "../pages/livetest";
+import { useToast } from "@/components/ui/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 
 
 interface Device {
@@ -52,10 +54,8 @@ interface DashboardPageProps {
 
 
 
-const DashboardPage = ({
-  onLogout,
-  onShowAdmin
-}: DashboardPageProps) => {
+const DashboardPage = ({ onLogout, onShowAdmin }: DashboardPageProps) => {
+  const { toast } = useToast();
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [isEmployeeEntryOpen, setIsEmployeeEntryOpen] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
@@ -99,13 +99,24 @@ useEffect(() => {
     const now = Date.now();
     const addAlert = (type: string, value: number, message: string) => {
       if (now - (lastAlertTimeRef.current[type] || 0) > ALERT_COOLDOWN_MS) {
+        // Add to alerts history
         setHealthAlerts(prev => [{
           id: crypto.randomUUID(),
           type: type as any,
           message,
           time: new Date(),
           value
-        }, ...prev.slice(0, 5)]); // Keep last 6 alerts
+        }, ...prev.slice(0, 5)]);
+        
+        // Show toast notification
+        toast({
+          title: "Health Alert",
+          description: message,
+          variant: "destructive",
+          duration: 5000, // Will dismiss after 5 seconds
+          className: "bg-red-50 border-red-200",
+        });
+
         lastAlertTimeRef.current[type] = now;
       }
     };
@@ -133,7 +144,7 @@ useEffect(() => {
     }
 
     // Check respiratory rate
-    if (selectedDevice.respiratoryRate < 6 || selectedDevice.respiratoryRate > 9) {
+    if (selectedDevice.respiratoryRate < 5 || selectedDevice.respiratoryRate > 9) {
       criticalCounters.current.respiratory_rate++;
       if (criticalCounters.current.respiratory_rate >= 5) {
         addAlert('respiratory_rate', selectedDevice.respiratoryRate,
@@ -147,7 +158,7 @@ useEffect(() => {
   const interval = setInterval(checkVitals, 5000);
   return () => clearInterval(interval);
 }, [selectedDevice?.connected, selectedDevice?.heartRate, 
-    selectedDevice?.temperature, selectedDevice?.respiratoryRate]);
+    selectedDevice?.temperature, selectedDevice?.respiratoryRate, toast]);
 
   // Auto-select first device on load
   useEffect(() => {
@@ -871,8 +882,6 @@ const formatDuration = (seconds: number): string => {
     </div>
   </CardContent>
 </Card>
-
-
 
 {/* Health Alerts History Card */}
 <Card className="flex-grow bg-white rounded-3xl shadow-lg border-0">
