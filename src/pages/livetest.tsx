@@ -108,18 +108,7 @@ export default function VitalsDashboard() {
       </div>
 
       {/* Live Chart */}
-      <Card className="bg-white rounded-xl shadow-lg">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg font-semibold">Live Monitoring</CardTitle>
-        </CardHeader>
-        <CardContent className="h-[400px]"> {/* Fixed height container for the chart */}
-          <VitalChart
-            title="Vital Signs"
-            subtitle="Real-time monitoring"
-            deviceId={MAC_ADDRESS}
-          />
-        </CardContent>
-      </Card>
+      
     </div>
   );
 }

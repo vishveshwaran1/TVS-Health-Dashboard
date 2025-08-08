@@ -115,7 +115,10 @@ export default {
 				'4000': '4s'
 			},
 			minHeight: {
-				'0': '0px'
+				'0': '0',
+			},
+			height: {
+				'screen-navbar': 'calc(100vh - 4rem)', // Adjust based on your navbar height
 			}
 		}
 	},
