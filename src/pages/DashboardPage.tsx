@@ -555,9 +555,11 @@ const formatDuration = (seconds: number): string => {
     );
   };
 
-  return <div className="h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-4 py-2 overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4 lg:mb-6 space-y-3 lg:space-y-0 animate-fade-in">
+  return (
+  <div className="h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col overflow-hidden">
+    {/* Header Section - Make it flex-shrink-0 to maintain its size */}
+    <div className="flex-shrink-0 px-4 py-2">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4 lg:mb-6 space-y-3 lg:space-y-0">
         <div className="flex flex-col space-y-2">
           <h1 className="text-lg lg:text-xl font-bold text-gray-900 bg-gradient-to-r from-blue-600 to-cyan-400 bg-clip-text text-transparent">
             Cold Chamber Monitoring Device
@@ -565,10 +567,7 @@ const formatDuration = (seconds: number): string => {
           <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-6">
             <p className="text-gray-600 text-xs font-medium">{getCurrentDate()}</p>
             <div className="flex items-center space-x-2">
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="text-xs text-green-600 font-medium">System Online</span>
-              </div>
+              
             </div>
           </div>
         </div>
@@ -616,22 +615,16 @@ const formatDuration = (seconds: number): string => {
             </DialogContent>
           </Dialog>
           
-          <Button 
-            onClick={onLogout} 
-            variant="outline" 
-            className="text-gray-700 hover:text-red-600 hover:bg-red-50 border-gray-300 hover:border-red-300 transition-all duration-300 ease-in-out transform hover:scale-105 w-full sm:w-auto text-xs px-2 py-1"
-          >
-            <LogOut className="w-3 h-3 mr-1" />
-            Logout
-          </Button>
+          
         </div>
       </div>
+    </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 h-[calc(100vh-8rem)]">
-        {/* Left Sidebar - Device Profile, Employee Details, and Work Session */}
-        <div className="px-2 xl:col-span-1 flex flex-col space-y-2 mb-4 xl:mb-0">
+      <div className="flex-grow grid grid-cols-1 xl:grid-cols-4 gap-3 px-4 min-h-0">
+        {/* Left Sidebar - Add overflow handling */}
+        <div className="xl:col-span-1 flex flex-col space-y-2 overflow-y-auto">
           {/* Device Profile Card - remains unchanged */}
-          <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl p-1">
+          <Card className="flex-shrink-0 bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl p-1">
   <CardContent className="p-2 m-auto">
     {/* Device Selection Dropdown */}
     <div className="mb-3 text-center">
@@ -693,7 +686,7 @@ const formatDuration = (seconds: number): string => {
 </Card>
 
           {/* Employee Details Card - updated as per suggestion */}
-          <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
+          <Card className="flex-shrink-0 bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
   <CardHeader className="pb-2 px-3 pt-3">
     <CardTitle className="text-gray-900 text-[16px] font-semibold">Employee Details</CardTitle>
   </CardHeader>
@@ -800,106 +793,36 @@ const formatDuration = (seconds: number): string => {
   </CardContent>
 </Card>
 
-          {/* Device Work Session Card - moved from main content */}
-          {selectedDevice && (
-    <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
-      <CardHeader className="pb-1 px-2 pt-2">
-        <CardTitle className="text-gray-900 text-sm font-bold">
-          Work Session Status
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="p-2 pt-0">
-        <div className="space-y-2">
-          {/* Start Time and Status */}
-          <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-blue-50 to-blue-100 rounded-md border border-blue-200">
-            <Zap className="w-3 h-3 text-blue-600" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Start Time</p>
-              <p className="text-[10px] font-semibold text-gray-900">
-                {sessionStartTime ? sessionStartTime.toLocaleTimeString('en-US', { 
-                  hour: '2-digit', 
-                  minute: '2-digit',
-                  hour12: true 
-                }) : "--:--:-- AM/PM"}
-              </p>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Wind className="w-3 h-3 text-gray-600" />
-              <p className="text-[10px] font-semibold text-gray-900">
-                {sessionStartTime && sessionEndTime === null ? "Active" : "Inactive"}
-              </p>
-            </div>
-          </div>
-
-          {/* Duration and End Time */}
-          <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-red-50 to-red-100 rounded-md border border-red-200">
-            <Activity className="w-3 h-3 text-red-600" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Duration</p>
-              <p className="text-[10px] font-semibold text-gray-900">
-                {formatDuration(currentSessionDuration)}
-              </p>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Hourglass className="w-3 h-3 text-gray-600" />
-              <p className="text-[10px] font-semibold text-gray-900">
-                {sessionEndTime ? sessionEndTime.toLocaleTimeString('en-US', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: true
-                }) : "--:--"}
-              </p>
-            </div>
-          </div>
-
-          {/* Status Messages */}
-          {!selectedDevice.connected && (
-            <p className="text-[10px] text-center text-gray-500 font-medium">
-              Device disconnected
-            </p>
-          )}
-          {selectedDevice.connected && !sessionStartTime && !sessionEndTime && (
-            <p className="text-[10px] text-center text-gray-500 font-medium">
-              Waiting for data...
-            </p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  )}
-        </div>
+{/* Device Work Session Card - moved from main content */}
+          
+  
+  </div>
 
         {/* Main Content */}
-        <div className="xl:col-span-3 h-full">
+      <div className="xl:col-span-3 flex flex-col min-h-0">
           {selectedDevice ? (
-            <div className="space-y-2 h-full animate-fade-in overflow-y-auto">
+          <div className="flex flex-col h-full space-y-2 overflow-y-auto">
               {/* Status Cards */}
-              
-                <LiveTest />
-               
-  {/* Activity Growth Chart */}
-  <Card className="bg-white shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
-   <CardHeader className="pb-2 px-3 pt-3">
-   
-  </CardHeader>
+                <div className="flex-shrink-0">
 
- </Card>
-            </div>
-          ) : (
-            <Card className="bg-white rounded-3xl shadow-lg border-0 h-full flex items-center justify-center transform transition-all duration-300 hover:shadow-xl">
-              <CardContent>
-                <div className="text-center text-gray-500 animate-fade-in">
-                  <Monitor className="w-20 h-20 mx-auto mb-4 opacity-50" />
-                  <p className="text-xl font-bold">Select a Device</p>
-                  <p className="text-sm text-gray-400">Choose a device to view health monitoring status</p>
+                <LiveTest />
                 </div>
-              </CardContent>
-            </Card>
+               
+               {/* Activity Growth Chart */}
+  
+   
+   
+             </div>
+          ) : (
+            <Card className=" h-full flex items-center justify-center transform transition-all duration-300 hover:shadow-xl">
+              
+         </Card>
           )}
         </div>
       </div>
-    </div>;
-};
+    </div>
+    )};
+
 
 // Helper function to parse blood pressure (add near other helper functions)
 const parseSystolicBP = (bpValue: string | number | null): number => {

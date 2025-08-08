@@ -1,4 +1,3 @@
-
 import type { Config } from "tailwindcss";
 
 export default {
@@ -114,6 +113,9 @@ export default {
 			animationDelay: {
 				'2000': '2s',
 				'4000': '4s'
+			},
+			minHeight: {
+				'0': '0px'
 			}
 		}
 	},

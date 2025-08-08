@@ -1,6 +1,5 @@
 
 import { useState } from "react";
-import LoginPage from "./LoginPage";
 import DashboardPage from "./DashboardPage";
 import AdminPage from "./AdminPage";
 
@@ -30,18 +29,8 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-white">
-      {currentView === 'login' && (
-        <LoginPage onLogin={handleLogin} />
-      )}
-      {currentView === 'dashboard' && (
-        <DashboardPage 
-          onLogout={handleLogout} 
-          onShowAdmin={handleShowAdmin}
-        />
-      )}
-      {currentView === 'admin' && (
-        <AdminPage onBack={handleBackToDashboard} />
-      )}
+    
+     <DashboardPage handleLogout={handleLogout} handleShowAdmin={handleShowAdmin} />
      
     </div>
   );
