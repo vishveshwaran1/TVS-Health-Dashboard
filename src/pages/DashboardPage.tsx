@@ -5,12 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Heart, Thermometer, User, MapPin, Wifi, LogOut, Settings, Ruler, Weight, Droplets, WifiOff, Power, Download, FileText, UserPlus, Activity, Zap, Wind, Monitor, Phone, Hourglass } from "lucide-react";
+import { Heart, HeartPulse, Thermometer, User, MapPin, Wifi, LogOut, Settings, Ruler, Weight, Droplets, WifiOff, Power, Download, FileText, UserPlus, Activity, Zap, Wind, Monitor, Phone, Hourglass } from "lucide-react";
 import PersonCard from "../components/PersonCard";
 import VitalChart from "../components/VitalChart";
 import EmployeeEntry from "../components/EmployeeEntry";
 import { supabase } from '../lib/supatest';
 import LiveTest from "../pages/livetest";
+import { useToast } from "@/components/ui/use-toast";
+import { Toaster } from "@/components/ui/toaster";
 
 
 interface Device {
@@ -50,14 +52,85 @@ interface DashboardPageProps {
   onShowAdmin: () => void;
 }
 
+interface HealthAlert {
+  id: string;
+  type: 'heart_rate' | 'temperature' | 'respiratory_rate' | 'blood_pressure';
+  message: string;
+  value: number;
+  time: Date;
+  severity: 'warning' | 'critical';
+}
 
+const VITAL_THRESHOLDS = {
+  heart_rate: {
+    critical: { min: 60, max: 140 },
+    warning: { min: 65, max: 135 }
+  },
+  temperature: {
+    critical: { min: 35.5, max: 38 },
+    warning: { min: 36, max: 37.5 }
+  },
+  respiratory_rate: {
+    critical: { min: 12, max: 20 },
+    warning: { min: 14, max: 18 }
+  },
+  blood_pressure: {
+    critical: { min: 120, max: 130 },
+    warning: { min: 122, max: 128 }
+  }
+};
 
-const DashboardPage = ({
-  onLogout,
-  onShowAdmin
-}: DashboardPageProps) => {
+const ALERT_COOLDOWN_MS = 60000; // 1-minute cooldown
+const CRITICAL_THRESHOLD = 5; // Number of consecutive readings
+
+const DashboardPage = ({ onLogout, onShowAdmin }: DashboardPageProps) => {
+  const { toast } = useToast();
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [isEmployeeEntryOpen, setIsEmployeeEntryOpen] = useState(false);
+
+  // Update the addAlert function to be memoized
+  const addAlert = useCallback((
+    type: HealthAlert['type'],
+    value: number,
+    severity: HealthAlert['severity']
+  ) => {
+    const now = Date.now();
+    
+    // Check cooldown
+    if (lastAlertTimeRef.current[type] && 
+        (now - lastAlertTimeRef.current[type]) < ALERT_COOLDOWN_MS) {
+      return;
+    }
+
+    const formattedValue = formatVitalValue(type, value);
+    const message = `${type.replace(/_/g, ' ')} is ${severity}: ${formattedValue}`;
+
+    const newAlert: HealthAlert = {
+      id: crypto.randomUUID(),
+      type,
+      message,
+      value,
+      time: new Date(),
+      severity
+    };
+
+    setHealthAlerts(prev => [newAlert, ...prev.slice(0, 5)]);
+    lastAlertTimeRef.current[type] = now;
+
+    // Show toast notification
+    toast({
+      title: severity === 'critical' ? "⚠️ Critical Alert" : "⚡ Warning",
+      description: message,
+      variant: severity === 'critical' ? "destructive" : "default",
+      duration: severity === 'critical' ? 10000 : 5000,
+      className: `${
+        severity === 'critical' 
+          ? 'bg-red-50 border-red-200 text-red-900'
+          : 'bg-yellow-50 border-yellow-200 text-yellow-900'
+      } shadow-lg animate-in fade-in duration-300`
+    });
+  }, [toast]);
+
   const [devices, setDevices] = useState<Device[]>([]);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeInCard, setSelectedEmployeeInCard] = useState<Employee | null>(null);
@@ -72,6 +145,88 @@ const DashboardPage = ({
   const MAX_HISTORY_POINTS = 10;
   const DATA_INACTIVITY_THRESHOLD_MS = 15000;
   const DEVICE_OFFLINE_THRESHOLD = 15000; // 15 seconds
+
+  const [healthAlerts, setHealthAlerts] = useState<HealthAlert[]>([]);
+
+  const criticalCounters = useRef({
+    heart_rate: 0,
+    temperature: 0,
+    respiratory_rate: 0,
+    blood_pressure: 0
+  });
+
+  const lastAlertTimeRef = useRef<Record<string, number>>({});
+  const ALERT_COOLDOWN_MS = 60000; // 1-minute cooldown
+
+  // Add this new useEffect for health monitoring
+useEffect(() => {
+  if (!selectedDevice?.connected) return;
+
+  const checkVitals = () => {
+    const now = Date.now();
+    const addAlert = (type: string, value: number, message: string) => {
+      if (now - (lastAlertTimeRef.current[type] || 0) > ALERT_COOLDOWN_MS) {
+        // Add to alerts history
+        setHealthAlerts(prev => [{
+          id: crypto.randomUUID(),
+          type: type as any,
+          message,
+          time: new Date(),
+          value,
+          severity: 'critical'
+        }, ...prev.slice(0, 5)]);
+        
+        // Show toast notification
+        toast({
+          title: "Health Alert",
+          description: message,
+          variant: "destructive",
+          duration: 5000, // Will dismiss after 5 seconds
+          className: "bg-red-50 border-red-200",
+        });
+
+        lastAlertTimeRef.current[type] = now;
+      }
+    };
+
+    // Check heart rate
+    if (selectedDevice.heartRate < 60 || selectedDevice.heartRate > 140) {
+      criticalCounters.current.heart_rate++;
+      if (criticalCounters.current.heart_rate >= 5) {
+        addAlert('heart_rate', selectedDevice.heartRate,
+          `Heart rate critical: ${selectedDevice.heartRate} bpm`);
+      }
+    } else {
+      criticalCounters.current.heart_rate = 0;
+    }
+
+    // Check temperature
+    if (selectedDevice.temperature < 35.5 || selectedDevice.temperature > 38) {
+      criticalCounters.current.temperature++;
+      if (criticalCounters.current.temperature >= 5) {
+        addAlert('temperature', selectedDevice.temperature,
+          `Temperature critical: ${selectedDevice.temperature}°C`);
+      }
+    } else {
+      criticalCounters.current.temperature = 0;
+    }
+
+    // Check respiratory rate
+    if (selectedDevice.respiratoryRate < 7 || selectedDevice.respiratoryRate > 9) {
+      criticalCounters.current.respiratory_rate++;
+      if (criticalCounters.current.respiratory_rate >= 5) {
+        addAlert('respiratory_rate', selectedDevice.respiratoryRate,
+          `Respiratory rate critical: ${selectedDevice.respiratoryRate} rpm`);
+      }
+    } else {
+      criticalCounters.current.respiratory_rate = 0;
+    }
+  };
+
+  const interval = setInterval(checkVitals, 5000);
+  return () => clearInterval(interval);
+}, [selectedDevice?.connected, selectedDevice?.heartRate, 
+    selectedDevice?.temperature, selectedDevice?.respiratoryRate, toast]);
 
   // Auto-select first device on load
   useEffect(() => {
@@ -111,6 +266,8 @@ const DashboardPage = ({
   value: number;
   
 }
+
+
 
 const DEVICE_ID = "hr-01";
 
@@ -353,7 +510,14 @@ console.log('New heart rate history:', newHeartRateHistory);
     };
   }, [selectedDevice?.connected, selectedDevice?.mac]);
 
-  // Add this useEffect for debugging
+  // Add this for debugging
+  useEffect(() => {
+    if (selectedDevice) {
+      console.log('Selected device updated:', selectedDevice);
+    }
+  }, [selectedDevice]);
+
+  // Add this for debugging
   useEffect(() => {
     if (selectedDevice) {
       console.log('Chart data updated:', {
@@ -555,20 +719,25 @@ const formatDuration = (seconds: number): string => {
     );
   };
 
-  return <div className="h-screen bg-gradient-to-br from-gray-50 to-gray-100 px-4 py-2 overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4 lg:mb-6 space-y-3 lg:space-y-0 animate-fade-in">
+  return (
+  <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
+    {/* Header - Fixed height */}
+    <div className="flex-shrink-0 px-4 py-2">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4 lg:mb-6 space-y-3 lg:space-y-0">
         <div className="flex flex-col space-y-2">
+           
           <h1 className="text-lg lg:text-xl font-bold text-gray-900 bg-gradient-to-r from-blue-600 to-cyan-400 bg-clip-text text-transparent">
+            <img 
+    src="/Delphi_logo.png" 
+    alt="Delphi TVS Logo" 
+    className="h-10 w-auto" 
+  />
             Cold Chamber Monitoring Device
           </h1>
           <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-6">
             <p className="text-gray-600 text-xs font-medium">{getCurrentDate()}</p>
             <div className="flex items-center space-x-2">
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                <span className="text-xs text-green-600 font-medium">System Online</span>
-              </div>
+              
             </div>
           </div>
         </div>
@@ -616,22 +785,17 @@ const formatDuration = (seconds: number): string => {
             </DialogContent>
           </Dialog>
           
-          <Button 
-            onClick={onLogout} 
-            variant="outline" 
-            className="text-gray-700 hover:text-red-600 hover:bg-red-50 border-gray-300 hover:border-red-300 transition-all duration-300 ease-in-out transform hover:scale-105 w-full sm:w-auto text-xs px-2 py-1"
-          >
-            <LogOut className="w-3 h-3 mr-1" />
-            Logout
-          </Button>
+          
         </div>
       </div>
+    </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-3 h-[calc(100vh-8rem)]">
-        {/* Left Sidebar - Device Profile, Employee Details, and Work Session */}
-        <div className="px-2 xl:col-span-1 flex flex-col space-y-2 mb-4 xl:mb-0">
-          {/* Device Profile Card - remains unchanged */}
-          <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl p-1">
+      {/* Main Content Grid */}
+    <div className="flex-grow grid grid-cols-1 xl:grid-cols-4 gap-3 px-4 min-h-0">
+      {/* Left Sidebar */}
+      <div className="xl:col-span-1 flex flex-col space-y-2 overflow-y-auto">
+        {/* Device Profile Card */}
+        <Card className="flex-shrink-0 bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
   <CardContent className="p-2 m-auto">
     {/* Device Selection Dropdown */}
     <div className="mb-3 text-center">
@@ -678,7 +842,7 @@ const formatDuration = (seconds: number): string => {
           <div className="flex items-center justify-center space-x-2">
             <div className={`w-2 h-2 rounded-full ${selectedDevice.connected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
             <span className="text-[10px] font-medium text-gray-600">
-              {selectedDevice.connected ? 'Online' : 'Offline'}
+             
             </span>
           </div>
         </div>
@@ -692,8 +856,8 @@ const formatDuration = (seconds: number): string => {
   </CardContent>
 </Card>
 
-          {/* Employee Details Card - updated as per suggestion */}
-          <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
+        {/* Employee Details Card */}
+        <Card className="flex-shrink-0 bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
   <CardHeader className="pb-2 px-3 pt-3">
     <CardTitle className="text-gray-900 text-[16px] font-semibold">Employee Details</CardTitle>
   </CardHeader>
@@ -800,106 +964,119 @@ const formatDuration = (seconds: number): string => {
   </CardContent>
 </Card>
 
-          {/* Device Work Session Card - moved from main content */}
-          {selectedDevice && (
-    <Card className="bg-white rounded-3xl shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
-      <CardHeader className="pb-1 px-2 pt-2">
-        <CardTitle className="text-gray-900 text-sm font-bold">
-          Work Session Status
+{/* Health Alerts History Card */}
+<Card className="flex-grow bg-white rounded-3xl shadow-lg border-0">
+  <CardHeader className="pb-2 px-3 pt-3">
+    <div className="flex items-center justify-between">
+      <div className="flex items-center space-x-2">
+        <Heart className="w-4 h-4 text-red-500" />
+        <CardTitle className="text-gray-900 text-[16px] font-semibold">
+          Health Alerts
         </CardTitle>
-      </CardHeader>
-      <CardContent className="p-2 pt-0">
-        <div className="space-y-2">
-          {/* Start Time and Status */}
-          <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-blue-50 to-blue-100 rounded-md border border-blue-200">
-            <Zap className="w-3 h-3 text-blue-600" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Start Time</p>
-              <p className="text-[10px] font-semibold text-gray-900">
-                {sessionStartTime ? sessionStartTime.toLocaleTimeString('en-US', { 
-                  hour: '2-digit', 
-                  minute: '2-digit',
-                  hour12: true 
-                }) : "--:--:-- AM/PM"}
-              </p>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Wind className="w-3 h-3 text-gray-600" />
-              <p className="text-[10px] font-semibold text-gray-900">
-                {sessionStartTime && sessionEndTime === null ? "Active" : "Inactive"}
-              </p>
+      </div>
+      {healthAlerts.length > 0 && (
+        <Badge 
+          variant="destructive" 
+          className="animate-pulse"
+        >
+          {healthAlerts.length}
+        </Badge>
+      )}
+    </div>
+  </CardHeader>
+  <CardContent className="p-3 overflow-y-auto max-h-[calc(100vh-24rem)]">
+    <div className="space-y-2">
+      {healthAlerts.length > 0 ? (
+        healthAlerts.map(alert => (
+          <div
+            key={alert.id}
+            className={`p-2 rounded-lg border transition-all duration-300 hover:shadow-md ${
+              alert.severity === 'critical'
+                ? 'bg-red-50 border-red-200'
+                : 'bg-yellow-50 border-yellow-200'
+            }`}
+          >
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <p className="text-xs font-medium text-gray-900">
+                  {alert.message}
+                </p>
+                <p className="text-[10px] text-gray-500 mt-1">
+                  {alert.time.toLocaleTimeString()}
+                </p>
+              </div>
+              {alert.type === 'heart_rate' && (
+                <HeartPulse className={`w-4 h-4 ${
+                  alert.severity === 'critical' ? 'text-red-500' : 'text-yellow-500'
+                }`} />
+              )}
+              {alert.type === 'temperature' && (
+                <Thermometer className={`w-4 h-4 ${
+                  alert.severity === 'critical' ? 'text-red-500' : 'text-yellow-500'
+                }`} />
+              )}
+              {alert.type === 'respiratory_rate' && (
+                <Activity className={`w-4 h-4 ${
+                  alert.severity === 'critical' ? 'text-red-500' : 'text-yellow-500'
+                }`} />
+              )}
             </div>
           </div>
-
-          {/* Duration and End Time */}
-          <div className="flex items-center space-x-1 p-1 bg-gradient-to-r from-red-50 to-red-100 rounded-md border border-red-200">
-            <Activity className="w-3 h-3 text-red-600" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[8px] text-gray-500 mb-0.5 font-medium">Duration</p>
-              <p className="text-[10px] font-semibold text-gray-900">
-                {formatDuration(currentSessionDuration)}
-              </p>
-            </div>
-            <div className="flex items-center space-x-1">
-              <Hourglass className="w-3 h-3 text-gray-600" />
-              <p className="text-[10px] font-semibold text-gray-900">
-                {sessionEndTime ? sessionEndTime.toLocaleTimeString('en-US', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  hour12: true
-                }) : "--:--"}
-              </p>
-            </div>
-          </div>
-
-          {/* Status Messages */}
-          {!selectedDevice.connected && (
-            <p className="text-[10px] text-center text-gray-500 font-medium">
-              Device disconnected
-            </p>
-          )}
-          {selectedDevice.connected && !sessionStartTime && !sessionEndTime && (
-            <p className="text-[10px] text-center text-gray-500 font-medium">
-              Waiting for data...
-            </p>
-          )}
+        ))
+      ) : (
+        <div className="text-center py-6">
+          <Activity className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+          <p className="text-xs text-gray-500">No alerts</p>
         </div>
-      </CardContent>
-    </Card>
-  )}
-        </div>
+      )}
+    </div>
+  </CardContent>
+</Card>
+
+{/* Device Work Session Card - moved from main content */}
+          
+  
+  </div>
 
         {/* Main Content */}
-        <div className="xl:col-span-3 h-full">
-          {selectedDevice ? (
-            <div className="space-y-2 h-full animate-fade-in overflow-y-auto">
-              {/* Status Cards */}
-              
-                <LiveTest />
-               
-  {/* Activity Growth Chart */}
-  <Card className="bg-white shadow-lg border-0 transform transition-all duration-300 hover:shadow-xl">
-   <CardHeader className="pb-2 px-3 pt-3">
-   
-  </CardHeader>
-
- </Card>
+      <div className="xl:col-span-3 flex flex-col min-h-0 overflow-hidden">
+        {selectedDevice ? (
+          <div className="flex flex-col h-full space-y-2">
+            {/* LiveTest Component - Fixed height */}
+            <div className="flex-shrink-0">
+              <LiveTest />
             </div>
-          ) : (
-            <Card className="bg-white rounded-3xl shadow-lg border-0 h-full flex items-center justify-center transform transition-all duration-300 hover:shadow-xl">
-              <CardContent>
-                <div className="text-center text-gray-500 animate-fade-in">
-                  <Monitor className="w-20 h-20 mx-auto mb-4 opacity-50" />
-                  <p className="text-xl font-bold">Select a Device</p>
-                  <p className="text-sm text-gray-400">Choose a device to view health monitoring status</p>
-                </div>
+
+            {/* Chart Card - Fills remaining space */}
+            <Card className="flex-grow bg-white rounded-xl shadow-lg overflow-hidden">
+              <CardHeader className="flex-shrink-0 pb-2">
+                <CardTitle className="text-lg font-semibold">Live Monitoring</CardTitle>
+              </CardHeader>
+              <CardContent className="h-[calc(100%-4rem)] p-0"> {/* Adjust height based on header */}
+                <VitalChart
+                  title="Vital Signs"
+                  subtitle=""
+                  
+                  deviceId={selectedDevice.mac}
+                />
               </CardContent>
             </Card>
-          )}
-        </div>
+          </div>
+        ) : (
+          <Card className="h-full flex items-center justify-center">
+            <div className="text-center">
+              <Monitor className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+              <p className="text-gray-500">Select a device to view details</p>
+            </div>
+          </Card>
+        )}
       </div>
-    </div>;
+    </div>
+  </div>
+);
 };
+
+
 
 // Helper function to parse blood pressure (add near other helper functions)
 const parseSystolicBP = (bpValue: string | number | null): number => {
@@ -908,6 +1085,37 @@ const parseSystolicBP = (bpValue: string | number | null): number => {
   const parts = bpValue.split('/')[0];
   const parsed = parseFloat(parts);
   return isNaN(parsed) ? 120 : parsed;
+};
+
+// Add these helper functions after your constants
+const checkVitalStatus = (
+  type: keyof typeof VITAL_THRESHOLDS,
+  value: number
+): 'normal' | 'warning' | 'critical' => {
+  const threshold = VITAL_THRESHOLDS[type];
+  
+  if (value < threshold.critical.min || value > threshold.critical.max) {
+    return 'critical';
+  }
+  if (value < threshold.warning.min || value > threshold.warning.max) {
+    return 'warning';
+  }
+  return 'normal';
+};
+
+const formatVitalValue = (type: string, value: number): string => {
+  switch (type) {
+    case 'temperature':
+      return `${value.toFixed(1)}°C`;
+    case 'heart_rate':
+      return `${value} bpm`;
+    case 'respiratory_rate':
+      return `${value} rpm`;
+    case 'blood_pressure':
+      return `${value} mmHg`;
+    default:
+      return `${value}`;
+  }
 };
 
 export default DashboardPage;
