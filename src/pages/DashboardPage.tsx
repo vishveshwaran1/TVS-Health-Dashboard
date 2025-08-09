@@ -52,12 +52,85 @@ interface DashboardPageProps {
   onShowAdmin: () => void;
 }
 
+interface HealthAlert {
+  id: string;
+  type: 'heart_rate' | 'temperature' | 'respiratory_rate' | 'blood_pressure';
+  message: string;
+  value: number;
+  time: Date;
+  severity: 'warning' | 'critical';
+}
 
+const VITAL_THRESHOLDS = {
+  heart_rate: {
+    critical: { min: 60, max: 140 },
+    warning: { min: 65, max: 135 }
+  },
+  temperature: {
+    critical: { min: 35.5, max: 38 },
+    warning: { min: 36, max: 37.5 }
+  },
+  respiratory_rate: {
+    critical: { min: 12, max: 20 },
+    warning: { min: 14, max: 18 }
+  },
+  blood_pressure: {
+    critical: { min: 120, max: 130 },
+    warning: { min: 122, max: 128 }
+  }
+};
+
+const ALERT_COOLDOWN_MS = 60000; // 1-minute cooldown
+const CRITICAL_THRESHOLD = 5; // Number of consecutive readings
 
 const DashboardPage = ({ onLogout, onShowAdmin }: DashboardPageProps) => {
   const { toast } = useToast();
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [isEmployeeEntryOpen, setIsEmployeeEntryOpen] = useState(false);
+
+  // Update the addAlert function to be memoized
+  const addAlert = useCallback((
+    type: HealthAlert['type'],
+    value: number,
+    severity: HealthAlert['severity']
+  ) => {
+    const now = Date.now();
+    
+    // Check cooldown
+    if (lastAlertTimeRef.current[type] && 
+        (now - lastAlertTimeRef.current[type]) < ALERT_COOLDOWN_MS) {
+      return;
+    }
+
+    const formattedValue = formatVitalValue(type, value);
+    const message = `${type.replace(/_/g, ' ')} is ${severity}: ${formattedValue}`;
+
+    const newAlert: HealthAlert = {
+      id: crypto.randomUUID(),
+      type,
+      message,
+      value,
+      time: new Date(),
+      severity
+    };
+
+    setHealthAlerts(prev => [newAlert, ...prev.slice(0, 5)]);
+    lastAlertTimeRef.current[type] = now;
+
+    // Show toast notification
+    toast({
+      title: severity === 'critical' ? "⚠️ Critical Alert" : "⚡ Warning",
+      description: message,
+      variant: severity === 'critical' ? "destructive" : "default",
+      duration: severity === 'critical' ? 10000 : 5000,
+      className: `${
+        severity === 'critical' 
+          ? 'bg-red-50 border-red-200 text-red-900'
+          : 'bg-yellow-50 border-yellow-200 text-yellow-900'
+      } shadow-lg animate-in fade-in duration-300`
+    });
+  }, [toast]);
+
   const [devices, setDevices] = useState<Device[]>([]);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [selectedEmployeeInCard, setSelectedEmployeeInCard] = useState<Employee | null>(null);
@@ -73,13 +146,7 @@ const DashboardPage = ({ onLogout, onShowAdmin }: DashboardPageProps) => {
   const DATA_INACTIVITY_THRESHOLD_MS = 15000;
   const DEVICE_OFFLINE_THRESHOLD = 15000; // 15 seconds
 
-  const [healthAlerts, setHealthAlerts] = useState<{
-    id: string;
-    type: 'heart_rate' | 'temperature' | 'respiratory_rate' | 'blood_pressure';
-    message: string;
-    time: Date;
-    value: number;
-  }[]>([]);
+  const [healthAlerts, setHealthAlerts] = useState<HealthAlert[]>([]);
 
   const criticalCounters = useRef({
     heart_rate: 0,
@@ -105,7 +172,8 @@ useEffect(() => {
           type: type as any,
           message,
           time: new Date(),
-          value
+          value,
+          severity: 'critical'
         }, ...prev.slice(0, 5)]);
         
         // Show toast notification
@@ -144,7 +212,7 @@ useEffect(() => {
     }
 
     // Check respiratory rate
-    if (selectedDevice.respiratoryRate < 5 || selectedDevice.respiratoryRate > 9) {
+    if (selectedDevice.respiratoryRate < 7 || selectedDevice.respiratoryRate > 9) {
       criticalCounters.current.respiratory_rate++;
       if (criticalCounters.current.respiratory_rate >= 5) {
         addAlert('respiratory_rate', selectedDevice.respiratoryRate,
@@ -442,7 +510,14 @@ console.log('New heart rate history:', newHeartRateHistory);
     };
   }, [selectedDevice?.connected, selectedDevice?.mac]);
 
-  // Add this useEffect for debugging
+  // Add this for debugging
+  useEffect(() => {
+    if (selectedDevice) {
+      console.log('Selected device updated:', selectedDevice);
+    }
+  }, [selectedDevice]);
+
+  // Add this for debugging
   useEffect(() => {
     if (selectedDevice) {
       console.log('Chart data updated:', {
@@ -650,7 +725,13 @@ const formatDuration = (seconds: number): string => {
     <div className="flex-shrink-0 px-4 py-2">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4 lg:mb-6 space-y-3 lg:space-y-0">
         <div className="flex flex-col space-y-2">
+           
           <h1 className="text-lg lg:text-xl font-bold text-gray-900 bg-gradient-to-r from-blue-600 to-cyan-400 bg-clip-text text-transparent">
+            <img 
+    src="/Delphi_logo.png" 
+    alt="Delphi TVS Logo" 
+    className="h-10 w-auto" 
+  />
             Cold Chamber Monitoring Device
           </h1>
           <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-6">
@@ -761,7 +842,7 @@ const formatDuration = (seconds: number): string => {
           <div className="flex items-center justify-center space-x-2">
             <div className={`w-2 h-2 rounded-full ${selectedDevice.connected ? 'bg-green-400 animate-pulse' : 'bg-gray-400'}`} />
             <span className="text-[10px] font-medium text-gray-600">
-              {selectedDevice.connected ? 'Online' : 'Offline'}
+             
             </span>
           </div>
         </div>
@@ -894,7 +975,10 @@ const formatDuration = (seconds: number): string => {
         </CardTitle>
       </div>
       {healthAlerts.length > 0 && (
-        <Badge variant="destructive" className="animate-pulse">
+        <Badge 
+          variant="destructive" 
+          className="animate-pulse"
+        >
           {healthAlerts.length}
         </Badge>
       )}
@@ -906,11 +990,11 @@ const formatDuration = (seconds: number): string => {
         healthAlerts.map(alert => (
           <div
             key={alert.id}
-            className={`p-2 rounded-lg border ${
-              alert.type === 'heart_rate' ? 'bg-red-50 border-red-200' :
-              alert.type === 'temperature' ? 'bg-orange-50 border-orange-200' :
-              'bg-yellow-50 border-yellow-200'
-            } transition-all duration-300 hover:shadow-md`}
+            className={`p-2 rounded-lg border transition-all duration-300 hover:shadow-md ${
+              alert.severity === 'critical'
+                ? 'bg-red-50 border-red-200'
+                : 'bg-yellow-50 border-yellow-200'
+            }`}
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -921,9 +1005,21 @@ const formatDuration = (seconds: number): string => {
                   {alert.time.toLocaleTimeString()}
                 </p>
               </div>
-              {alert.type === 'heart_rate' && <HeartPulse className="w-4 h-4 text-red-500" />}
-              {alert.type === 'temperature' && <Thermometer className="w-4 h-4 text-orange-500" />}
-              {alert.type === 'respiratory_rate' && <Activity className="w-4 h-4 text-yellow-500" />}
+              {alert.type === 'heart_rate' && (
+                <HeartPulse className={`w-4 h-4 ${
+                  alert.severity === 'critical' ? 'text-red-500' : 'text-yellow-500'
+                }`} />
+              )}
+              {alert.type === 'temperature' && (
+                <Thermometer className={`w-4 h-4 ${
+                  alert.severity === 'critical' ? 'text-red-500' : 'text-yellow-500'
+                }`} />
+              )}
+              {alert.type === 'respiratory_rate' && (
+                <Activity className={`w-4 h-4 ${
+                  alert.severity === 'critical' ? 'text-red-500' : 'text-yellow-500'
+                }`} />
+              )}
             </div>
           </div>
         ))
@@ -959,6 +1055,7 @@ const formatDuration = (seconds: number): string => {
               <CardContent className="h-[calc(100%-4rem)] p-0"> {/* Adjust height based on header */}
                 <VitalChart
                   title="Vital Signs"
+                  subtitle=""
                   
                   deviceId={selectedDevice.mac}
                 />
@@ -988,6 +1085,37 @@ const parseSystolicBP = (bpValue: string | number | null): number => {
   const parts = bpValue.split('/')[0];
   const parsed = parseFloat(parts);
   return isNaN(parsed) ? 120 : parsed;
+};
+
+// Add these helper functions after your constants
+const checkVitalStatus = (
+  type: keyof typeof VITAL_THRESHOLDS,
+  value: number
+): 'normal' | 'warning' | 'critical' => {
+  const threshold = VITAL_THRESHOLDS[type];
+  
+  if (value < threshold.critical.min || value > threshold.critical.max) {
+    return 'critical';
+  }
+  if (value < threshold.warning.min || value > threshold.warning.max) {
+    return 'warning';
+  }
+  return 'normal';
+};
+
+const formatVitalValue = (type: string, value: number): string => {
+  switch (type) {
+    case 'temperature':
+      return `${value.toFixed(1)}°C`;
+    case 'heart_rate':
+      return `${value} bpm`;
+    case 'respiratory_rate':
+      return `${value} rpm`;
+    case 'blood_pressure':
+      return `${value} mmHg`;
+    default:
+      return `${value}`;
+  }
 };
 
 export default DashboardPage;
