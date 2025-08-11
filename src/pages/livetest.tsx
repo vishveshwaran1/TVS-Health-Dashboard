@@ -21,7 +21,17 @@ interface VitalStatus {
 
 const MAC_ADDRESS ="18:8B:0E:91:8B:98"; // Replace with the actual MAC address
 
-export default function VitalsDashboard() {
+// Add interface for props
+interface VitalsDashboardProps {
+  onAlertGenerated?: (alert: {
+    type: string;
+    value: number;
+    message: string;
+    severity: 'warning' | 'critical';
+  }) => void;
+}
+
+export default function VitalsDashboard({ onAlertGenerated }: VitalsDashboardProps) {
   const { toast } = useToast();
   const [data, setData] = useState({
     heart_rate: null,
@@ -102,11 +112,21 @@ export default function VitalsDashboard() {
 
             if (newCount >= 5 && cooldownPassed && value !== null) {
               const { formatted, unit } = formatVitalValue(vitalName, value);
+              
+              // Show toast
               toast({
                 title: "⚠️ Critical Alert",
                 description: `${vitalName.replace(/([A-Z])/g, ' $1').trim()} is critical: ${formatted} ${unit}`,
                 variant: "destructive",
                 duration: 5000,
+              });
+
+              // Send alert to parent component
+              onAlertGenerated?.({
+                type: vitalName.toLowerCase(),
+                value: Number(formatted),
+                message: `${vitalName.replace(/([A-Z])/g, ' $1').trim()} is critical: ${formatted} ${unit}`,
+                severity: 'critical'
               });
 
               newStatuses[vitalName] = {
@@ -136,7 +156,7 @@ export default function VitalsDashboard() {
 
       return newStatuses;
     });
-  }, [checkVitalCritical, formatVitalValue, toast, data]);
+  }, [checkVitalCritical, formatVitalValue, toast, data, onAlertGenerated]);
 
   // Set up real-time subscription
   useEffect(() => {
