@@ -71,8 +71,8 @@ const VITAL_THRESHOLDS = {
     warning: { min: 36, max: 37.5 }
   },
   respiratory_rate: {
-    critical: { min: 12, max: 20 },
-    warning: { min: 14, max: 18 }
+    critical: { min: 3, max: 9 },
+    warning: { min: 3, max: 9 }
   },
   blood_pressure: {
     critical: { min: 120, max: 130 },
@@ -80,7 +80,7 @@ const VITAL_THRESHOLDS = {
   }
 };
 
-const ALERT_COOLDOWN_MS = 60000; // 1-minute cooldown
+const ALERT_COOLDOWN_MS = 30000; // 1-minute cooldown
 const CRITICAL_THRESHOLD = 5; // Number of consecutive readings
 
 const DashboardPage = ({ onLogout, onShowAdmin }: DashboardPageProps) => {
@@ -158,75 +158,19 @@ const DashboardPage = ({ onLogout, onShowAdmin }: DashboardPageProps) => {
   const lastAlertTimeRef = useRef<Record<string, number>>({});
   const ALERT_COOLDOWN_MS = 60000; // 1-minute cooldown
 
-  // Add this new useEffect for health monitoring
-useEffect(() => {
-  if (!selectedDevice?.connected) return;
+  interface VitalStatus {
+  value: number | null;
+  counter: number;
+  lastAlertTime: number;
+}
 
-  const checkVitals = () => {
-    const now = Date.now();
-    const addAlert = (type: string, value: number, message: string) => {
-      if (now - (lastAlertTimeRef.current[type] || 0) > ALERT_COOLDOWN_MS) {
-        // Add to alerts history
-        setHealthAlerts(prev => [{
-          id: crypto.randomUUID(),
-          type: type as any,
-          message,
-          time: new Date(),
-          value,
-          severity: 'critical'
-        }, ...prev.slice(0, 5)]);
-        
-        // Show toast notification
-        toast({
-          title: "Health Alert",
-          description: message,
-          variant: "destructive",
-          duration: 5000, // Will dismiss after 5 seconds
-          className: "bg-red-50 border-red-200",
-        });
-
-        lastAlertTimeRef.current[type] = now;
-      }
-    };
-
-    // Check heart rate
-    if (selectedDevice.heartRate < 60 || selectedDevice.heartRate > 140) {
-      criticalCounters.current.heart_rate++;
-      if (criticalCounters.current.heart_rate >= 5) {
-        addAlert('heart_rate', selectedDevice.heartRate,
-          `Heart rate critical: ${selectedDevice.heartRate} bpm`);
-      }
-    } else {
-      criticalCounters.current.heart_rate = 0;
-    }
-
-    // Check temperature
-    if (selectedDevice.temperature < 35.5 || selectedDevice.temperature > 38) {
-      criticalCounters.current.temperature++;
-      if (criticalCounters.current.temperature >= 5) {
-        addAlert('temperature', selectedDevice.temperature,
-          `Temperature critical: ${selectedDevice.temperature}°C`);
-      }
-    } else {
-      criticalCounters.current.temperature = 0;
-    }
-
-    // Check respiratory rate
-    if (selectedDevice.respiratoryRate < 7 || selectedDevice.respiratoryRate > 9) {
-      criticalCounters.current.respiratory_rate++;
-      if (criticalCounters.current.respiratory_rate >= 5) {
-        addAlert('respiratory_rate', selectedDevice.respiratoryRate,
-          `Respiratory rate critical: ${selectedDevice.respiratoryRate} rpm`);
-      }
-    } else {
-      criticalCounters.current.respiratory_rate = 0;
-    }
-  };
-
-  const interval = setInterval(checkVitals, 5000);
-  return () => clearInterval(interval);
-}, [selectedDevice?.connected, selectedDevice?.heartRate, 
-    selectedDevice?.temperature, selectedDevice?.respiratoryRate, toast]);
+// Add this near the start of the DashboardPage component
+const vitalStatusRef = useRef<Record<string, VitalStatus>>({
+  heart_rate: { value: null, counter: 0, lastAlertTime: 0 },
+  temperature: { value: null, counter: 0, lastAlertTime: 0 },
+  respiratory_rate: { value: null, counter: 0, lastAlertTime: 0 },
+  blood_pressure: { value: null, counter: 0, lastAlertTime: 0 }
+});
 
   // Auto-select first device on load
   useEffect(() => {
@@ -262,14 +206,14 @@ useEffect(() => {
     });
 
     interface LiveData {
-  id: string;
-  value: number;
+   id: string;
+   value: number;
   
-}
+    }
 
 
 
-const DEVICE_ID = "hr-01";
+   const DEVICE_ID = "hr-01";
 
 
 
@@ -345,9 +289,9 @@ const DEVICE_ID = "hr-01";
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+   }, []);
 
-  useEffect(() => {
+   useEffect(() => {
     if (devices.length > 0 && (!selectedDevice || !devices.find(d => d.id === selectedDevice.id))) {
       setSelectedDevice(devices[0]);
     }
@@ -363,7 +307,7 @@ const DEVICE_ID = "hr-01";
         connected: !prev.connected
       } : null);
     }
-  };
+   };
   const getConnectionStatus = () => {
     const connected = devices.filter(d => d.connected).length;
     const total = devices.length;
@@ -398,275 +342,24 @@ const DEVICE_ID = "hr-01";
       day: 'numeric'
     });
   };
-  useEffect(() => {
-    if (!selectedDevice?.connected) return;
+ 
+    
 
-    const updateDeviceData = (newData: any) => {
-      const currentTime = new Date().toLocaleTimeString();
-      
-      setSelectedDevice(prev => {
-        if (!prev) return null;
-        console.log('Updating device data:', newData);
-        // Create new history entries
-        const newHeartRateHistory = [...prev.heartRateHistory, {
-          time: currentTime,
-          value: newData.heart_rate || prev.heartRate
-        }].slice(-MAX_HISTORY_POINTS);
-console.log('New heart rate history:', newHeartRateHistory);
-        const newTempHistory = [...prev.temperatureHistory, {
-          time: currentTime,
-          value: newData.temperature || prev.temperature
-        }].slice(-MAX_HISTORY_POINTS);
-
-        const newRespHistory = [...prev.respiratoryRateHistory, {
-          time: currentTime,
-          value: newData.respiratory_rate || prev.respiratoryRate
-        }].slice(-MAX_HISTORY_POINTS);
-
-        const newBloodPressureHistory = [...prev.bloodPressureHistory, {
-          time: currentTime,
-          value: newData.blood_pressure || prev.bloodPressure
-        }].slice(-MAX_HISTORY_POINTS);
-
-        return {
-          ...prev,
-          heartRate: newData.heart_rate || prev.heartRate,
-          temperature: newData.temperature || prev.temperature,
-          respiratoryRate: newData.respiratory_rate || prev.respiratoryRate,
-          bloodPressure: newData.blood_pressure || prev.bloodPressure,
-          heartRateHistory: newHeartRateHistory,
-          temperatureHistory: newTempHistory,
-          respiratoryRateHistory: newRespHistory,
-          bloodPressureHistory: newBloodPressureHistory
-        };
-      });
-    };
-
-    // Set up Supabase subscription
-    const channel = supabase
-      .channel('health-monitoring')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'Health Status',
-          filter: `mac_address=eq.${selectedDevice.mac}`
-        },
-        payload => updateDeviceData(payload.new)
-      )
-      .subscribe();
-
-    // Cleanup subscription
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [selectedDevice?.connected, selectedDevice?.mac]);
-
-  // Add this useEffect after your existing effects
-  useEffect(() => {
-    if (!selectedDevice?.connected) return;
-
-    const channel = supabase
-      .channel('realtime-vitals')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'Health Status',
-          filter: `mac_address=eq.${selectedDevice.mac}`
-        },
-        (payload) => {
-          const newData = payload.new;
-          const currentTime = new Date().toLocaleTimeString();
-
-          setSelectedDevice(prev => {
-            if (!prev) return null;
-
-            const updateHistory = (history: Array<{ time: string; value: number }>, newValue: number) => {
-              const newHistory = [...history];
-              newHistory.shift(); // Remove oldest value
-              newHistory.push({ time: currentTime, value: newValue });
-              return newHistory;
-            };
-
-            return {
-              ...prev,
-              heartRate: newData.heart_rate ?? prev.heartRate,
-              temperature: newData.temperature ?? prev.temperature,
-              respiratoryRate: newData.respiratory_rate ?? prev.respiratoryRate,
-              heartRateHistory: updateHistory(prev.heartRateHistory, newData.heart_rate ?? prev.heartRate),
-              temperatureHistory: updateHistory(prev.temperatureHistory, newData.temperature ?? prev.temperature),
-              respiratoryRateHistory: updateHistory(prev.respiratoryRateHistory, newData.respiratory_rate ?? prev.respiratoryRate)
-            };
-          });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [selectedDevice?.connected, selectedDevice?.mac]);
-
-  // Add this for debugging
-  useEffect(() => {
-    if (selectedDevice) {
-      console.log('Selected device updated:', selectedDevice);
-    }
-  }, [selectedDevice]);
-
-  // Add this for debugging
-  useEffect(() => {
-    if (selectedDevice) {
-      console.log('Chart data updated:', {
-        heartRate: selectedDevice.heartRate,
-        temperature: selectedDevice.temperature,
-        respiratoryRate: selectedDevice.respiratoryRate,
-        historyLength: {
-          heart: selectedDevice.heartRateHistory.length,
-          temp: selectedDevice.temperatureHistory.length,
-          resp: selectedDevice.respiratoryRateHistory.length
-        }
-      });
-    }
-  }, [selectedDevice?.heartRateHistory, selectedDevice?.temperatureHistory, selectedDevice?.respiratoryRateHistory]);
-
-  // Helper function to update history arrays
-  const updateHistory = (history: Array<{ time: string; value: number }>, newValue: number) => {
-    const timeString = new Date().toLocaleTimeString('en-US', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-    const newHistory = [...history.slice(1), { time: timeString, value: newValue }];
-    return newHistory;
-  };
-
-  // Replace the existing useEffect for real-time updates with this:
-  useEffect(() => {
-    if (!selectedDevice?.connected) return;
-
-    const handleRealtimeUpdate = (payload: any) => {
-      const newData = payload.new;
-      const now = new Date();
-      const currentTime = now.toLocaleTimeString();
-
-      setSelectedDevice(prev => {
-        if (!prev) return null;
-
-        // Update histories
-        const updateHistory = (history: Array<{ time: string; value: number }>, newValue: number) => {
-          const newHistory = [...history];
-          newHistory.shift();
-          newHistory.push({ time: currentTime, value: newValue });
-          return newHistory;
-        };
-
-        const newHeartRateHistory = updateHistory(prev.heartRateHistory, newData.heart_rate ?? prev.heartRate);
-        const newTempHistory = updateHistory(prev.temperatureHistory, newData.temperature ?? prev.temperature);
-        const newRespHistory = updateHistory(prev.respiratoryRateHistory, newData.respiratory_rate ?? prev.respiratoryRate);
-        const newBPHistory = updateHistory(prev.bloodPressureHistory, newData.blood_pressure ?? prev.bloodPressure);
-
-        return {
-          ...prev,
-          heartRate: newData.heart_rate ?? prev.heartRate,
-          temperature: newData.temperature ?? prev.temperature,
-          respiratoryRate: newData.respiratory_rate ?? prev.respiratoryRate,
-          bloodPressure: newData.blood_pressure ?? prev.bloodPressure,
-          heartRateHistory: newHeartRateHistory,
-          temperatureHistory: newTempHistory,
-          respiratoryRateHistory: newRespHistory,
-          bloodPressureHistory: newBPHistory
-        };
-      });
-    };
-
-    // Set up Supabase subscription without debouncing
-    const channel = supabase
-      .channel(`device-updates-${selectedDevice.mac}-${Date.now()}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'Health Status',
-          filter: `mac_address=eq.${selectedDevice.mac}`
-        },
-        (payload) => {
-          try {
-            handleRealtimeUpdate(payload);
-          } catch (error) {
-            console.error('Error processing update:', error);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [selectedDevice?.connected, selectedDevice?.mac]);
-
-  // Session cleanup effect
-useEffect(() => {
-  return () => {
-    if (durationIntervalIdRef.current) {
-      clearInterval(durationIntervalIdRef.current);
-      durationIntervalIdRef.current = null;
-    }
-    if (dataTimeoutIdRef.current) {
-      clearTimeout(dataTimeoutIdRef.current);
-      dataTimeoutIdRef.current = null;
-    }
-    setSessionStartTime(null);
-    setSessionEndTime(null);
-    setCurrentSessionDuration(0);
-    lastDataActivityTimeRef.current = null;
-  };
-}, [selectedDevice?.id]);
-
-// Duration timer effect
-useEffect(() => {
-  if (sessionStartTime && sessionEndTime === null) {
-    if (durationIntervalIdRef.current === null) {
-      durationIntervalIdRef.current = setInterval(() => {
-        const nowTime = Date.now();
-        const currentStartTime = sessionStartTime.getTime();
-        setCurrentSessionDuration(Math.floor((nowTime - currentStartTime) / 1000));
-      }, 1000);
-    }
-  } else {
-    if (durationIntervalIdRef.current) {
-      clearInterval(durationIntervalIdRef.current);
-      durationIntervalIdRef.current = null;
-    }
-  }
-}, [sessionStartTime, sessionEndTime]);
-
-  // Add this helper function
-  const determineDeviceStatus = (heartRate: number, temperature: number, respiratoryRate: number): 'normal' | 'warning' | 'critical' => {
-  if (heartRate < 60 || heartRate > 100) return 'critical';
-  if (temperature < 97 || temperature > 99) return 'critical';
-  if (respiratoryRate < 12 || respiratoryRate > 20) return 'critical';
   
-  if (heartRate < 65 || heartRate > 95) return 'warning';
-  if (temperature < 97.5 || temperature > 98.5) return 'warning';
-  if (respiratoryRate < 14 || respiratoryRate > 18) return 'warning';
   
-  return 'normal';
-};
 
-const formatDuration = (seconds: number): string => {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
 
-  const pad = (num: number) => num.toString().padStart(2, '0');
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
-};
+
+ 
+
+    
+
+  
+
+
+ 
+
+ 
 
   const renderEmployeeDetails = () => {
     if (!selectedDevice) return null;
@@ -718,6 +411,25 @@ const formatDuration = (seconds: number): string => {
       </Card>
     );
   };
+
+  // Inside the DashboardPage component, add the alert handler
+const handleAlertFromLiveTest = useCallback((alertData: {
+  type: string;
+  value: number;
+  message: string;
+  severity: 'warning' | 'critical';
+}) => {
+  const newAlert: HealthAlert = {
+    id: crypto.randomUUID(),
+    type: alertData.type as HealthAlert['type'],
+    message: alertData.message,
+    value: alertData.value,
+    time: new Date(),
+    severity: alertData.severity
+  };
+
+  setHealthAlerts(prev => [newAlert, ...prev.slice(0, 5)]);
+}, []);
 
   return (
   <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
@@ -975,17 +687,14 @@ const formatDuration = (seconds: number): string => {
         </CardTitle>
       </div>
       {healthAlerts.length > 0 && (
-        <Badge 
-          variant="destructive" 
-          className="animate-pulse"
-        >
+        <Badge variant="destructive" className="animate-pulse">
           {healthAlerts.length}
         </Badge>
       )}
     </div>
   </CardHeader>
-  <CardContent className="p-3 overflow-y-auto max-h-[calc(100vh-24rem)]">
-    <div className="space-y-2">
+  <CardContent className="flex-grow overflow-y-auto p-3">
+    <div className="space-y-2 h-full">
       {healthAlerts.length > 0 ? (
         healthAlerts.map(alert => (
           <div
@@ -1044,7 +753,7 @@ const formatDuration = (seconds: number): string => {
           <div className="flex flex-col h-full space-y-2">
             {/* LiveTest Component - Fixed height */}
             <div className="flex-shrink-0">
-              <LiveTest />
+              <LiveTest onAlertGenerated={handleAlertFromLiveTest} />
             </div>
 
             {/* Chart Card - Fills remaining space */}

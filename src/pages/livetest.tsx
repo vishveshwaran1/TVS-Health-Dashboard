@@ -21,7 +21,17 @@ interface VitalStatus {
 
 const MAC_ADDRESS ="18:8B:0E:91:8B:98"; // Replace with the actual MAC address
 
-export default function VitalsDashboard() {
+// Add interface for props
+interface VitalsDashboardProps {
+  onAlertGenerated?: (alert: {
+    type: string;
+    value: number;
+    message: string;
+    severity: 'warning' | 'critical';
+  }) => void;
+}
+
+export default function VitalsDashboard({ onAlertGenerated }: VitalsDashboardProps) {
   const { toast } = useToast();
   const [data, setData] = useState({
     heart_rate: null,
@@ -58,15 +68,13 @@ export default function VitalsDashboard() {
 
   // Main function to handle vital sign updates
   const handleVitalUpdate = useCallback((newData: any) => {
-    console.log('Handling vital update:', newData); // Debug log
-    
-    // Ensure we have valid data
+    console.log('Handling vital update:', newData);
+
     if (!newData || typeof newData !== 'object') {
       console.error('Invalid data received:', newData);
       return;
     }
 
-    // Update data state immediately
     setData(prevData => {
       const hasChanges = JSON.stringify(prevData) !== JSON.stringify(newData);
       if (hasChanges) {
@@ -90,48 +98,65 @@ export default function VitalsDashboard() {
       Object.entries(vitalsToCheck).forEach(([vitalName, value]) => {
         const isCritical = checkVitalCritical(vitalName, value);
         const prevStatus = prevStatuses[vitalName];
+        const prevValue =
+          vitalName === "heartRate" ? data.heart_rate :
+          vitalName === "temperature" ? data.temperature :
+          vitalName === "respiratoryRate" ? data.respiratory_rate :
+          vitalName === "bloodPressure" ? parseInt(data.blood_pressure?.split('/')[0]) : null;
 
-        if (isCritical) {
-          const newCount = prevStatus.count + 1;
-          const cooldownPassed = now - prevStatus.lastAlertTime > 10000; // 10 seconds
+        // Only proceed if the value has changed
+        if (value !== prevValue) {
+          if (isCritical) {
+            const newCount = prevStatus.count + 1;
+            const cooldownPassed = now - prevStatus.lastAlertTime > 10000;
 
-          if (newCount >= 5 && cooldownPassed && value !== null) {
-            // Show alert
-            const { formatted, unit } = formatVitalValue(vitalName, value);
-            toast({
-              title: "⚠️ Critical Alert",
-              description: `${vitalName.replace(/([A-Z])/g, ' $1').trim()} is critical: ${formatted} ${unit}`,
-              variant: "destructive",
-              duration: 5000,
-            });
+            if (newCount >= 5 && cooldownPassed && value !== null) {
+              const { formatted, unit } = formatVitalValue(vitalName, value);
+              
+              // Show toast
+              toast({
+                title: "⚠️ Critical Alert",
+                description: `${vitalName.replace(/([A-Z])/g, ' $1').trim()} is critical: ${formatted} ${unit}`,
+                variant: "destructive",
+                duration: 5000,
+              });
 
-            newStatuses[vitalName] = {
-              count: 0, // Reset counter after alert
-              lastAlertTime: now,
-              isCritical: true
-            };
+              // Send alert to parent component
+              onAlertGenerated?.({
+                type: vitalName.toLowerCase(),
+                value: Number(formatted),
+                message: `${vitalName.replace(/([A-Z])/g, ' $1').trim()} is critical: ${formatted} ${unit}`,
+                severity: 'critical'
+              });
+
+              newStatuses[vitalName] = {
+                count: 0,
+                lastAlertTime: now,
+                isCritical: true
+              };
+            } else {
+              newStatuses[vitalName] = {
+                ...prevStatus,
+                count: newCount,
+                isCritical: true
+              };
+            }
           } else {
             newStatuses[vitalName] = {
-              ...prevStatus,
-              count: newCount,
-              isCritical: true
+              count: 0,
+              lastAlertTime: prevStatus.lastAlertTime,
+              isCritical: false
             };
           }
         } else {
-          // Reset if vital returns to normal
-          newStatuses[vitalName] = {
-            count: 0,
-            lastAlertTime: prevStatus.lastAlertTime,
-            isCritical: false
-          };
+          // If value hasn't changed, preserve previous status (prevents repeated alerts)
+          newStatuses[vitalName] = { ...prevStatus };
         }
       });
 
       return newStatuses;
     });
-
-    
-  }, [checkVitalCritical, formatVitalValue, toast]);
+  }, [checkVitalCritical, formatVitalValue, toast, data, onAlertGenerated]);
 
   // Set up real-time subscription
   useEffect(() => {
