@@ -236,11 +236,14 @@ const vitalStatusRef = useRef<Record<string, VitalStatus>>({
             const lastUpdateTime = new Date(row.updated_at).getTime();
             const isConnected = (Date.now() - lastUpdateTime) < DEVICE_OFFLINE_THRESHOLD;
             
+            // Get device name based on MAC address
+            const deviceName = mac === "18:8B:0E:91:8B:98" ? "Device 1" : `Device ${mac}`;
+            
             if (!uniqueDevicesMap.has(mac) || 
                 new Date(row.updated_at) > new Date(uniqueDevicesMap.get(mac)!.updated_at_raw)) {
               uniqueDevicesMap.set(mac, {
                 id: row.id,
-                deviceName: `Device ${mac}`,
+                deviceName: deviceName, // Use the mapped device name
                 assignedPerson: employee ? employee.name : "Unassigned",
                 mac: mac,
                 heartRate: row.heart_rate ?? 0,
@@ -437,6 +440,7 @@ const handleAlertFromLiveTest = useCallback((alertData: {
     <div className="flex-shrink-0 px-4 py-2">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4 lg:mb-6 space-y-3 lg:space-y-0">
         <div className="flex flex-col space-y-2">
+          
            
           <h1 className="text-lg lg:text-xl font-bold text-gray-900 bg-gradient-to-r from-blue-600 to-cyan-400 bg-clip-text text-transparent">
             <img 

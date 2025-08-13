@@ -47,7 +47,7 @@ const VitalChart = ({ title, subtitle, deviceId }: VitalChartProps) => {
           const latest = data[0];
           setCurrentData({
             heartRate: `${latest.heart_rate} bpm`,
-            temperature: `${latest.temperature}°F`,
+            temperature: `${latest.temperature}°C`,
             respiratoryRate: `${latest.respiratory_rate} bpm`,
             bloodPressure: `${latest.blood_pressure}/80 mmHg`
           });
@@ -76,9 +76,9 @@ const VitalChart = ({ title, subtitle, deviceId }: VitalChartProps) => {
 
   const colors = {
     heartRate: '#ef4444',
-    temperature: '#3b82f6',
+    temperature: '#FF9B00',
     respiratoryRate: '#06b6d4',
-    bloodPressure: '#f59e0b'
+    bloodPressure: '#FFE100'
   };
 
   return (
@@ -169,7 +169,7 @@ const VitalChart = ({ title, subtitle, deviceId }: VitalChartProps) => {
                               unit = " bpm";
                               break;
                             case "temperature":
-                              unit = " °F";
+                              unit = " °C";
                               break;
                             case "respiratoryRate":
                               unit = " bpm";
