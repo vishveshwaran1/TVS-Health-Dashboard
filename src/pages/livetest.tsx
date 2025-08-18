@@ -9,7 +9,7 @@ import { HeartPulse, Thermometer, Activity, Stethoscope } from "lucide-react";
 const VITAL_RANGES = {
   heartRate: { min: 60, max: 140 },
   temperature: { min: 25, max: 39 },
-  respiratoryRate: { min: 10, max: 30 },
+  respiratoryRate: { min: 8, max: 30 },
   bloodPressure: { min: 110, max: 130 },
   bodyActivity: { expectedValue: "Active" }
 };
@@ -21,7 +21,7 @@ interface VitalStatus {
   value?: string;
 }
 
-const MAC_ADDRESS ="CC:BA:97:15:4C:BC"; // Replace with the actual MAC address
+const MAC_ADDRESS ="18:8B:0E:91:8B:98"; // Replace with the actual MAC address
 
 // Add interface for props
 interface VitalsDashboardProps {
