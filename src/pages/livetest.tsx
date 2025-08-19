@@ -36,10 +36,10 @@ interface VitalsDashboardProps {
 export default function VitalsDashboard({ onAlertGenerated }: VitalsDashboardProps) {
   const { toast } = useToast();
   const [data, setData] = useState({
-    heart_rate: null,
-    temperature: null,
-    blood_pressure: "--",
-    respiratory_rate: null,
+    heart_rate: 0,
+    temperature: 0,
+    blood_pressure: "0",
+    respiratory_rate: 0,
     body_activity: "No Data" // default value
   });
 
@@ -86,23 +86,60 @@ export default function VitalsDashboard({ onAlertGenerated }: VitalsDashboardPro
       return;
     }
 
+    // Check if any numeric value is zero or null
+    const hasZeroValue = 
+      !newData.heart_rate || 
+      !newData.temperature || 
+      !newData.respiratory_rate || 
+      !newData.blood_pressure ||
+      newData.heart_rate === 0 || 
+      newData.temperature === 0 || 
+      newData.respiratory_rate === 0 || 
+      newData.blood_pressure === "0";
+
+    // If any value is zero, set all values to zero
+    const processedData = hasZeroValue ? {
+      heart_rate: 0,
+      temperature: 0,
+      blood_pressure: "0",
+      respiratory_rate: 0,
+      body_activity: "No Data"
+    } : newData;
+
     setData(prevData => {
-      const hasChanges = JSON.stringify(prevData) !== JSON.stringify(newData);
+      const hasChanges = JSON.stringify(prevData) !== JSON.stringify(processedData);
       if (hasChanges) {
-        console.log('Updating data state:', newData);
-        return newData;
+        console.log('Updating data state:', processedData);
+        return processedData;
       }
       return prevData;
     });
 
     const now = Date.now();
     const vitalsToCheck = {
-      heartRate: newData.heart_rate,
-      temperature: newData.temperature,
-      respiratoryRate: newData.respiratory_rate,
-      bloodPressure: parseInt(newData.blood_pressure?.split('/')[0]),
-      bodyActivity: newData.body_activity
+      heartRate: processedData.heart_rate,
+      temperature: processedData.temperature,
+      respiratoryRate: processedData.respiratory_rate,
+      bloodPressure: parseInt(processedData.blood_pressure?.split('/')[0]),
+      bodyActivity: processedData.body_activity
     };
+
+    // Reset all vital statuses if any value is zero
+    if (hasZeroValue) {
+      setVitalStatuses(prevStatuses => {
+        const resetStatuses = { ...prevStatuses };
+        Object.keys(resetStatuses).forEach(key => {
+          resetStatuses[key] = {
+            count: 0,
+            lastAlertTime: 0,
+            isCritical: false,
+            value: key === 'bodyActivity' ? 'No Data' : undefined
+          };
+        });
+        return resetStatuses;
+      });
+      return;
+    }
 
     setVitalStatuses(prevStatuses => {
       const newStatuses = { ...prevStatuses };
@@ -310,18 +347,20 @@ export default function VitalsDashboard({ onAlertGenerated }: VitalsDashboardPro
           <h3 className="font-semibold text-gray-800 text-sm">{title}</h3>
           <div className="flex items-center space-x-2">
             <span className={`text-md font-bold ${
-              value === null ? 'text-gray-400' :
+              value === null || value === 0 ? 'text-gray-400' :
               vitalName === 'bodyActivity' ? 
                 value === 'Active' ? 'text-green-600' : 'text-red-600' :
               vitalStatuses[vitalName].isCritical ? 'text-red-600' : 
               'text-gray-900'
             }`}>
-              {vitalName === 'bodyActivity' ? formatBodyActivity(value as string) : value ?? "Loading..."}
+              {vitalName === 'bodyActivity' ? 
+                value === null ? "No Data" : formatBodyActivity(value as string) : 
+                value ?? "0"}
             </span>
-            {unit && value !== null && !isTextValue && (
+            {unit && !isTextValue && (
               <span className="text-[10px] text-gray-400">{unit}</span>
             )}
-            {vitalStatuses[vitalName].isCritical && (
+            {vitalStatuses[vitalName].isCritical && value !== 0 && (
               <AlertCircle className="w-4 h-4 text-red-500 animate-pulse" />
             )}
           </div>
