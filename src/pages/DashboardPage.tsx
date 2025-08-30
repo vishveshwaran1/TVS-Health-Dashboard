@@ -437,6 +437,28 @@ const handleAlertFromLiveTest = useCallback((alertData: {
   setHealthAlerts(prev => [newAlert, ...prev.slice(0, 5)]);
 }, []);
 
+  // Add this function to get current time in 24-hour format
+const getCurrentTime = () => {
+  return new Date().toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+};
+
+// Add state for current time
+const [currentTime, setCurrentTime] = useState(getCurrentTime());
+
+// Add useEffect to update time every second
+useEffect(() => {
+  const timer = setInterval(() => {
+    setCurrentTime(getCurrentTime());
+  }, 1000);
+
+  return () => clearInterval(timer);
+}, []);
+
   return (
   <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100">
     {/* Header - Fixed height */}
@@ -454,7 +476,11 @@ const handleAlertFromLiveTest = useCallback((alertData: {
             Cold Chamber Monitoring Device
           </h1>
           <div className="flex flex-col sm:flex-row sm:items-center space-y-2 sm:space-y-0 sm:space-x-6">
-            <p className="text-gray-600 text-xs font-medium">{getCurrentDate()}</p>
+            <div className="flex items-center space-x-3">
+    <p className="text-gray-600 text-xs font-medium">{getCurrentDate()}</p>
+    <span className="text-gray-400">|</span>
+    <p className="text-gray-600 text-xs font-medium">{currentTime}</p>
+  </div>
             <div className="flex items-center space-x-2">
               
             </div>
