@@ -155,7 +155,7 @@ export default function VitalsDashboard({ onAlertGenerated }: VitalsDashboardPro
               const newCount = prevStatus.count + 1;
               const cooldownPassed = now - prevStatus.lastAlertTime > 10000;
 
-              if (newCount >= 5 && cooldownPassed) {
+              if (newCount >= 4 && cooldownPassed) {
                 toast({
                   title: "⚠️ Activity Alert",
                   description: `Body Activity Status: ${value}`,
@@ -215,7 +215,7 @@ export default function VitalsDashboard({ onAlertGenerated }: VitalsDashboardPro
               const newCount = prevStatus.count + 1;
               const cooldownPassed = now - prevStatus.lastAlertTime > 10000;
 
-              if (newCount >= 5 && cooldownPassed && value !== null) {
+              if (newCount >= 4 && cooldownPassed && value !== null) {
                 const { formatted, unit } = formatVitalValue(vitalName, value);
                 
                 // Show toast
@@ -394,7 +394,7 @@ export default function VitalsDashboard({ onAlertGenerated }: VitalsDashboardPro
           title="Blood Pressure"
           value={data.blood_pressure}
           unit="mmHg"
-          color="bg-yellow-500"
+          color="bg-orange-800"
           vitalName="bloodPressure"
         />
         
