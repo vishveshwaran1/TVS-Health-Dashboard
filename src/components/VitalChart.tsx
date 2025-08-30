@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChartContainer, ChartTooltip, ChartLegend } from "@/components/ui/chart";
+import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid } from "recharts";
 import { supabase } from "../lib/supatest";
 
@@ -11,6 +11,75 @@ interface VitalChartProps {
 }
 
 const MAX_HISTORY_POINTS = 10;
+
+const SingleVitalChart = ({ 
+  data, 
+  vitalKey, 
+  color, 
+  title, 
+  unit 
+}: { 
+  data: any[];
+  vitalKey: string;
+  color: string;
+  title: string;
+  unit: string;
+}) => (
+  <Card className="h-full shadow-lg hover:shadow-xl transition-shadow duration-300">
+    <CardHeader className="p-3 pb-2 border-b">
+      <div className="flex items-center space-x-2">
+        <div className={`w-2 h-2 rounded-full`} style={{ backgroundColor: color }} />
+        <CardTitle className="text-sm font-semibold text-gray-800">{title}</CardTitle>
+      </div>
+    </CardHeader>
+    <CardContent className="p-3 h-[200px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={data}
+          margin={{ top: 5, right: 10, left: 0, bottom: 5 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis
+            dataKey="time"
+            tick={{ fill: '#6b7280', fontSize: 9 }}
+            height={20}
+            interval="preserveStartEnd"
+          />
+          <YAxis
+            tick={{ fill: '#6b7280', fontSize: 9 }}
+            width={30}
+            domain={['auto', 'auto']}
+          />
+          <ChartTooltip
+            content={({ active, payload, label }) => {
+              if (active && payload?.[0]) {
+                return (
+                  <div className="rounded-lg border bg-white/95 backdrop-blur-sm p-2 shadow-lg">
+                    <div className="flex flex-col gap-1">
+                      <p className="text-xs font-medium text-gray-600">{label}</p>
+                      <p className="text-sm font-bold" style={{ color }}>
+                        {`${payload[0].value}${unit}`}
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            }}
+          />
+          <Line
+            type="monotone"
+            dataKey={vitalKey}
+            stroke={color}
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4, stroke: 'white', strokeWidth: 2, fill: color }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </CardContent>
+  </Card>
+);
 
 const VitalChart = ({ title, subtitle, deviceId }: VitalChartProps) => {
   // State for current values and history
@@ -100,208 +169,78 @@ const VitalChart = ({ title, subtitle, deviceId }: VitalChartProps) => {
     return () => clearInterval(interval); // Cleanup on unmount
   }, [deviceId]);
 
-  const colors = {
-    heartRate: '#ef4444',
-    temperature: '#FF9B00',
-    respiratoryRate: '#06b6d4',
-    bloodPressure: '#825B32'
-  };
+  const charts = [
+    {
+      key: 'heartRate',
+      title: 'Heart Rate',
+      color: '#ef4444',
+      unit: ' bpm'
+    },
+    {
+      key: 'temperature',
+      title: 'Temperature',
+      color: '#FF9B00',
+      unit: ' °C'
+    },
+    {
+      key: 'respiratoryRate',
+      title: 'Respiratory Rate',
+      color: '#06b6d4',
+      unit: ' bpm'
+    },
+    {
+      key: 'bloodPressure',
+      title: 'Blood Pressure',
+      color: '#825B32',
+      unit: ' mmHg'
+    }
+  ];
 
   return (
-    <div className="h-full w-full flex flex-col">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-2 flex-shrink-0">
-        <p className="text-gray-600 text-xs mb-2 sm:mb-0">{subtitle}</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <p className="text-xs font-medium" style={{ color: colors.heartRate }}>
-            HR: {currentData.heartRate}
-          </p>
-          <p className="text-xs font-medium" style={{ color: colors.temperature }}>
-            Temp: {currentData.temperature}
-          </p>
-          <p className="text-xs font-medium" style={{ color: colors.respiratoryRate }}>
-            RR: {currentData.respiratoryRate}
-          </p>
-          <p className="text-xs font-medium" style={{ color: colors.bloodPressure }}>
-            BP: {currentData.bloodPressure}
-          </p>
+    <div className="h-full w-full flex flex-col space-y-4 p-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white/50 backdrop-blur-sm rounded-lg p-3 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        <div className="flex flex-wrap items-center gap-4">
+          {charts.map(({ key, color, unit }) => (
+            <div 
+              key={key} 
+              className="flex items-center space-x-2 bg-white px-3 py-1.5 rounded-full shadow-sm"
+            >
+              <div className={`w-2 h-2 rounded-full`} style={{ backgroundColor: color }} />
+              <p className="text-xs font-medium text-gray-600">
+                {key.replace(/([A-Z])/g, ' $1').trim()}:
+              </p>
+              <p className="text-xs font-bold" style={{ color }}>
+                {currentData[key]}
+              </p>
+            </div>
+          ))}
         </div>
       </div>
 
-      <div className="flex-1 min-h-0">
-        {chartData.length > 0 ? (
-          <ChartContainer 
-            className="h-full w-full"
-            config={{
-              line: {
-                color: "#000000",
-                label: "Line Chart"
-              },
-              heartRate: {
-                color: colors.heartRate,
-                label: "Heart Rate"
-              },
-              temperature: {
-                color: colors.temperature,
-                label: "Temperature"
-              },
-              respiratoryRate: {
-                color: colors.respiratoryRate,
-                label: "Respiratory Rate"
-              },
-              bloodPressure: {
-                color: colors.bloodPressure,
-                label: "Blood Pressure"
-              }
-            }}
-          >
-            <ResponsiveContainer>
-              <LineChart 
-                data={chartData}
-                margin={{ top: 10, right: 35, left: 40, bottom: 20 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                
-                <XAxis
-                  dataKey="time"
-                  tick={{ fill: '#6b7280', fontSize: 10 }}
-                  height={30} // Added fixed height for X-axis
-                  interval="preserveStartEnd" // Ensures start and end labels are shown
-                  tickMargin={8} // Added margin between ticks and axis line
-                />
-
-                <YAxis
-                  yAxisId="universal"
-                  orientation="left"
-                  stroke="#6b7280"
-                  domain={[0, 200]}
-                  tickCount={21}
-                  tick={{ fill: '#6b7280', fontSize: 10 }}
-                  width={40} // Added fixed width for Y-axis
-                  tickMargin={4} // Added margin between ticks and axis line
-                />
-
-                <ChartTooltip 
-                  content={({ active, payload, label }) => {
-                    if (active && payload && payload.length) {
-                      return (
-                        <div className="rounded-lg border bg-white p-2 shadow-xl">
-                          <p className="mb-1 text-xs font-bold">{label}</p>
-                          {payload.map((entry: any) => {
-                            const value = entry.value;
-                            let displayValue = value;
-                            let unit = "";
-
-                            switch (entry.dataKey) {
-                              case "heartRate":
-                                unit = " bpm";
-                                break;
-                              case "temperature":
-                                unit = " °C";
-                                break;
-                              case "respiratoryRate":
-                                unit = " bpm";
-                                break;
-                              case "bloodPressure":
-                                unit = " mmHg";
-                                displayValue = `${value}/80`;
-                                break;
-                            }
-
-                            return (
-                              <p 
-                                key={entry.name} 
-                                className="text-xs" 
-                                style={{ color: entry.color }}
-                              >
-                                {`${entry.name}: ${displayValue}${unit}`}
-                              </p>
-                            );
-                          })}
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-
-                <Line
-                  type="monotone"
-                  dataKey="heartRate"
-                  name="Heart Rate"
-                  stroke={colors.heartRate}
-                  yAxisId="universal"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4, stroke: colors.heartRate, strokeWidth: 2 }}
-                  connectNulls
-                />
-                <Line
-                  type="monotone"
-                  dataKey="temperature"
-                  name="Temperature"
-                  stroke={colors.temperature}
-                  yAxisId="universal"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4, stroke: colors.temperature, strokeWidth: 2 }}
-                  connectNulls
-                />
-                <Line
-                  type="monotone"
-                  dataKey="respiratoryRate"
-                  name="Respiratory Rate"
-                  stroke={colors.respiratoryRate}
-                  yAxisId="universal"
-                  strokeWidth={2}
-                  strokeDasharray="5 5"
-                  dot={{ fill: colors.respiratoryRate, strokeWidth: 2, r: 3 }}
-                  activeDot={{ r: 4, stroke: colors.respiratoryRate, strokeWidth: 2 }}
-                  connectNulls
-                />
-                <Line
-                  type="monotone"
-                  dataKey="bloodPressure"
-                  name="Blood Pressure"
-                  stroke={colors.bloodPressure}
-                  yAxisId="universal"
-                  strokeWidth={2}
-                  strokeDasharray="3 3"
-                  dot={{ fill: colors.bloodPressure, strokeWidth: 2, r: 3 }}
-                  activeDot={{ r: 4, stroke: colors.bloodPressure, strokeWidth: 2 }}
-                  connectNulls
-                />
-
-                <ChartLegend 
-                  verticalAlign="bottom"
-                  height={36}
-                  content={({ payload }) => (
-                    <div className="flex flex-wrap justify-center gap-4 pt-2"> {/* Added flex-wrap */}
-                      {payload?.map((entry: any) => (
-                        <div key={entry.name} className="flex items-center gap-2">
-                          <div 
-                            className="h-2 w-2 rounded-full"
-                            style={{ backgroundColor: entry.color }}
-                          />
-                          <span className="text-xs font-medium text-gray-700 whitespace-nowrap">{entry.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-        ) : (
-          <div className="h-full w-full flex items-center justify-center">
-            <p className="text-gray-500 text-sm">
-              Waiting for valid readings...
-            </p>
+      {chartData.length > 0 ? (
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 min-h-0">
+          {charts.map(chart => (
+            <SingleVitalChart
+              key={chart.key}
+              data={chartData}
+              vitalKey={chart.key}
+              color={chart.color}
+              title={chart.title}
+              unit={chart.unit}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center bg-white/50 backdrop-blur-sm rounded-lg">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400 mx-auto mb-2" />
+            <p className="text-gray-500 text-sm">Waiting for valid readings...</p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };
-
 
 export default VitalChart;

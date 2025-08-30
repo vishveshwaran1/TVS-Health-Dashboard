@@ -68,7 +68,7 @@ const Footer: FC = () => {
           <p className="text-[8px] text-center text-gray-500">
             © {new Date().getFullYear()} TVS Cold Chamber Health Monitoring System
             <span className="mx-1 text-gray-400">|</span>
-            <span className="text-blue-600">Team SPARK</span>
+            <span className="text-blue-600">all right are reseved by the sairam insitutions and in associate with spark Invotech</span>
           </p>
         </div>
       </div>
