@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { Sheet } from 'lucide-react';
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +15,7 @@ import { supabase } from '../lib/supatest';
 import LiveTest from "../pages/livetest";
 import { useToast } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toaster";
+import Footer from '../components/Footer';
 
 
 interface Device {
@@ -435,7 +438,7 @@ const handleAlertFromLiveTest = useCallback((alertData: {
 }, []);
 
   return (
-  <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
+  <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 to-gray-100">
     {/* Header - Fixed height */}
     <div className="flex-shrink-0 px-4 py-2">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-4 lg:mb-6 space-y-3 lg:space-y-0">
@@ -469,7 +472,17 @@ const handleAlertFromLiveTest = useCallback((alertData: {
                 <UserPlus className="w-3 h-3 mr-1" />
                 Employee Entry
               </Button>
+
+              
             </DialogTrigger>
+
+              <Button 
+                variant="outline" 
+                className="text-gray-700 hover:text-gray-900 hover:bg-blue-50 border-gray-300 hover:border-blue-300 transition-all duration-300 ease-in-out transform hover:scale-105 w-full sm:w-auto text-xs px-2 py-1"
+              >
+                <Sheet className="w-3 h-3 mr-1" />
+                Export
+              </Button>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
               <EmployeeEntry 
                 onBack={() => setIsEmployeeEntryOpen(false)}
@@ -507,7 +520,7 @@ const handleAlertFromLiveTest = useCallback((alertData: {
     </div>
 
       {/* Main Content Grid */}
-    <div className="flex-grow grid grid-cols-1 xl:grid-cols-4 gap-3 px-4 min-h-0">
+    <div className="flex-grow grid grid-cols-1 xl:grid-cols-4 gap-3 px-4 pb-16"> {/* Added pb-16 */}
       {/* Left Sidebar */}
       <div className="xl:col-span-1 flex flex-col space-y-2 overflow-y-auto">
         {/* Device Profile Card */}
@@ -761,15 +774,14 @@ const handleAlertFromLiveTest = useCallback((alertData: {
             </div>
 
             {/* Chart Card - Fills remaining space */}
-            <Card className="flex-grow bg-white rounded-xl shadow-lg overflow-hidden">
+            <Card className="flex-grow bg-white rounded-xl shadow-lg overflow-hidden w-full">
               <CardHeader className="flex-shrink-0 pb-2">
                 <CardTitle className="text-lg font-semibold">Live Monitoring</CardTitle>
               </CardHeader>
-              <CardContent className="h-[calc(100%-4rem)] p-0"> {/* Adjust height based on header */}
+              <CardContent className="h-[calc(100vh-16rem)] p-0"> {/* Fixed height calculation */}
                 <VitalChart
                   title="Vital Signs"
                   subtitle=""
-                  
                   deviceId={selectedDevice.mac}
                 />
               </CardContent>
@@ -785,6 +797,7 @@ const handleAlertFromLiveTest = useCallback((alertData: {
         )}
       </div>
     </div>
+    <Footer />
   </div>
 );
 };
@@ -831,4 +844,49 @@ const formatVitalValue = (type: string, value: number): string => {
   }
 };
 
+// Add this right before the final closing div in DashboardPage.tsx
+{/* Footer Section */}
+<div className="flex-shrink-0 px-4 py-3 bg-white border-t">
+  <div className="container mx-auto">
+    <div className="flex items-center justify-center space-x-8">
+      {/* Logo 1 - Delphi */}
+      <div className="flex flex-col items-center">
+        <img 
+          src="/Delphi_logo.png" 
+          alt="Delphi TVS Logo" 
+          className="h-8 w-auto object-contain"
+        />
+      </div>
+
+      {/* Logo 2 - Sairam */}
+      <div className="flex flex-col items-center">
+        <img 
+          src="/sairam logo.png" 
+          alt="Sairam Logo" 
+          className="h-8 w-auto object-contain"
+        />
+      </div>
+
+      {/* Logo 3 - Spark */}
+      <div className="flex flex-col items-center">
+        <img 
+          src="/spark logo.png" 
+          alt="Spark Logo" 
+          className="h-8 w-auto object-contain"
+        />
+      </div>
+
+      {/* Logo 4 - Incubator */}
+      <div className="flex flex-col items-center">
+        <img 
+          src="/incubator logo.png" 
+          alt="Incubator Logo" 
+          className="h-8 w-auto object-contain"
+        />
+      </div>
+    </div>
+  </div>
+</div>
+
 export default DashboardPage;
+
